@@ -4,9 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Incidencia extends Model
 {
+    use SoftDeletes;
+
     protected $table = 'incidencias';
 
     public $timestamps = false;
@@ -17,6 +22,7 @@ class Incidencia extends Model
         'curso_id',
         'fecha',
         'hora',
+        'tipo_aula',
         'descripcion',
         'gravedad_id',
         'estado_id',
@@ -32,6 +38,11 @@ class Incidencia extends Model
         return $this->belongsTo(User::class, 'usuario_id', 'id');
     }
 
+    public function eliminadoPor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'eliminado_por');
+    }
+
     public function curso(): BelongsTo
     {
         return $this->belongsTo(Curso::class, 'curso_id', 'id');
@@ -45,5 +56,23 @@ class Incidencia extends Model
     public function estado(): BelongsTo
     {
         return $this->belongsTo(Estado::class, 'estado_id', 'id');
+    }
+
+    public function tiposIncidencia(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            TipoIncidencia::class,
+            'incidencia_tipo',
+            'incidencia_id',
+            'tipo_incidencia_id'
+        );
+    }
+
+    /**
+     * El límite de cinco corresponde solo a fotografías activas, para permitir reemplazos.
+     */
+    public function fotografias(): HasMany
+    {
+        return $this->hasMany(IncidenciaFotografia::class, 'incidencia_id');
     }
 }

@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -65,5 +66,10 @@ class User extends Authenticatable
     public function asignacionesDocentes()
     {
         return $this->hasMany(AsignacionDocente::class, 'usuario_id');
+    }
+
+    public function chatbotConversaciones(): HasMany
+    {
+        return $this->hasMany(ChatbotConversacion::class, 'usuario_id');
     }
 }

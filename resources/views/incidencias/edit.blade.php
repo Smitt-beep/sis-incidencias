@@ -10,7 +10,7 @@
 
 <div class="card border-0 shadow-sm">
     <div class="card-body p-4">
-        <form action="{{ route('incidencias.update', $incidencia) }}" method="POST">
+        <form action="{{ route('incidencias.update', $incidencia) }}" method="POST" enctype="multipart/form-data">
             @csrf
             @method('PUT')
             <div class="row g-3">
@@ -52,15 +52,137 @@
                 </div>
 
                 <div class="col-md-6">
-                    <label for="fecha" class="form-label">Fecha</label>
-                    <input type="date" name="fecha" id="fecha" value="{{ old('fecha', \Carbon\Carbon::parse($incidencia->fecha)->format('Y-m-d')) }}" class="form-control @error('fecha') is-invalid @enderror" required>
-                    @error('fecha') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                    <p class="mb-0">
+                        <span class="form-label d-block">Fecha y hora de registro</span>
+                        {{ \Carbon\Carbon::parse($incidencia->fecha)->format('d/m/Y') }}
+                        {{ substr((string) $incidencia->hora, 0, 5) }}
+                    </p>
                 </div>
 
                 <div class="col-md-6">
-                    <label for="hora" class="form-label">Hora</label>
-                    <input type="time" name="hora" id="hora" value="{{ old('hora', substr((string) $incidencia->hora, 0, 5)) }}" class="form-control @error('hora') is-invalid @enderror" required>
-                    @error('hora') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                    <label for="tipo_aula" class="form-label">Tipo de aula</label>
+                    <select name="tipo_aula" id="tipo_aula" class="form-select @error('tipo_aula') is-invalid @enderror" required>
+                        <option value="">Seleccione el tipo de aula</option>
+                        <option value="teoria" @selected(old('tipo_aula', $incidencia->tipo_aula) === 'teoria')>Teoría</option>
+                        <option value="taller" @selected(old('tipo_aula', $incidencia->tipo_aula) === 'taller')>Taller</option>
+                    </select>
+                    @error('tipo_aula') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label d-block mb-1">Tipos de incidencia</label>
+                    <p class="text-secondary small mb-3">Selecciona uno o varios tipos relacionados con el incidente</p>
+                    <div class="row g-2">
+                        @foreach ($tiposIncidencia as $tipo)
+                        <div class="col-12 col-md-6 col-lg-4">
+                            <input
+                                type="checkbox"
+                                class="btn-check"
+                                name="tipos[]"
+                                id="tipo_incidencia_{{ $tipo->id }}"
+                                value="{{ $tipo->id }}"
+                                @checked(in_array($tipo->id, (array) old('tipos', $tiposIncidenciaSeleccionados)))
+                            >
+                            <label class="btn btn-outline-primary w-100 h-100 p-3 text-start text-wrap" for="tipo_incidencia_{{ $tipo->id }}">
+                                {{ $tipo->nombre }}
+                            </label>
+                        </div>
+                        @endforeach
+                    </div>
+                    @foreach ($errors->getMessages() as $key => $messages)
+                        @if ($key === 'tipos' || str_starts_with($key, 'tipos.'))
+                            <div class="text-danger small mt-1">{{ $messages[0] }}</div>
+                        @endif
+                    @endforeach
+                </div>
+
+                <div class="col-12">
+                    <div data-photograph-picker data-saved-count="{{ $fotografiasActuales }}" data-max-count="5" data-max-file-size="5242880">
+                        <h2 class="h6 mb-2">Fotografías guardadas ({{ $fotografiasActuales }})</h2>
+                        @if ($incidencia->fotografias->isNotEmpty())
+                            <div class="row g-3 mb-3">
+                                @foreach ($incidencia->fotografias as $fotografia)
+                                    <div class="col-6 col-md-4 col-lg-3">
+                                        <a
+                                            href="{{ route('incidencias.fotografias.show', [$incidencia, $fotografia]) }}"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            class="d-block rounded border border-primary-subtle bg-light p-2 text-decoration-none"
+                                        >
+                                            <img
+                                                src="{{ route('incidencias.fotografias.show', [$incidencia, $fotografia]) }}"
+                                                alt="Fotografía guardada de la incidencia #{{ $incidencia->id }}"
+                                                class="img-fluid rounded w-100"
+                                                style="height: 150px; object-fit: cover;"
+                                                loading="lazy"
+                                            >
+                                            <span class="small d-block text-center text-primary mt-2">Fotografía guardada</span>
+                                        </a>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @else
+                            <p class="text-secondary small">Esta incidencia aún no tiene fotografías guardadas.</p>
+                        @endif
+
+                        <label for="fotografias" class="form-label">Agregar fotografías</label>
+                        <p class="text-secondary small mb-2">
+                            Puede agregar {{ $fotografiasDisponibles }} más; máximo 5 MB por archivo.
+                            Formatos permitidos: JPG, JPEG, PNG y WebP.
+                        </p>
+                        <input
+                            type="file"
+                            name="fotografias[]"
+                            id="fotografias"
+                            data-photograph-input
+                            class="form-control @error('fotografias') is-invalid @enderror"
+                            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                            multiple
+                            @disabled($fotografiasDisponibles === 0)
+                        >
+                        <div class="mt-2">
+                            <button type="button" class="btn btn-outline-primary" data-photograph-take-photo @disabled($fotografiasDisponibles === 0)>Tomar foto</button>
+                            <input
+                                type="file"
+                                data-photograph-camera-input
+                                class="visually-hidden"
+                                accept="image/*"
+                                capture="environment"
+                                tabindex="-1"
+                                aria-hidden="true"
+                                @disabled($fotografiasDisponibles === 0)
+                            >
+                        </div>
+                        <p class="small fw-semibold text-primary mt-2 mb-2" data-photograph-count aria-live="polite"></p>
+                        <div class="small text-danger mb-2" data-photograph-feedback role="alert" aria-live="assertive" hidden></div>
+                        <h3 class="h6 mt-3 mb-2">Fotografías nuevas seleccionadas</h3>
+                        <div class="row g-3" data-photograph-preview></div>
+                        <div class="modal" data-photograph-camera-modal tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="camera-title-edit" aria-hidden="true" style="display: none;">
+                            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h2 class="modal-title fs-5" id="camera-title-edit">Tomar fotografía</h2>
+                                        <button type="button" class="btn-close" data-photograph-camera-close aria-label="Cerrar cámara"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <video data-photograph-camera-video class="w-100 rounded bg-dark" style="max-height: 60vh; object-fit: contain;" autoplay muted playsinline aria-label="Vista en vivo de la cámara"></video>
+                                        <p class="small mt-2 mb-0" data-photograph-camera-status role="status" aria-live="polite"></p>
+                                        <p class="small text-danger mt-2 mb-0" data-photograph-camera-error role="alert" hidden></p>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-outline-secondary" data-photograph-native-camera>Abrir cámara del dispositivo</button>
+                                        <button type="button" class="btn btn-secondary" data-photograph-camera-close>Cancelar</button>
+                                        <button type="button" class="btn btn-primary" data-photograph-capture disabled>Capturar foto</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    @foreach ($errors->getMessages() as $key => $messages)
+                        @if ($key === 'fotografias' || str_starts_with($key, 'fotografias.'))
+                            <div class="text-danger small mt-1">{{ $messages[0] }}</div>
+                        @endif
+                    @endforeach
                 </div>
 
                 <div class="col-md-6">

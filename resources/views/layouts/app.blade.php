@@ -21,6 +21,36 @@
         </div>
     </nav>
 
+    <aside class="chatbot-panel" id="chatbot-panel" role="dialog" aria-labelledby="chatbot-title" aria-hidden="true">
+        <header class="chatbot-header">
+            <div class="chatbot-brand">
+                <img class="chatbot-avatar" src="{{ asset('images/chatbot/tungasuquita.png') }}" alt="">
+                <h2 class="h5 mb-0" id="chatbot-title">TungaBot</h2>
+            </div>
+            <button type="button" class="btn-close btn-close-white" id="chatbot-close" aria-label="Cerrar chat"></button>
+        </header>
+        <div class="chatbot-messages" id="chatbot-messages" role="log" aria-live="polite" aria-relevant="additions">
+            <div class="chatbot-message chatbot-message-assistant">
+                <span class="chatbot-message-sender">TungaBot</span>
+                <p class="mb-0">¡Hola! Soy TungaBot, tu asistente del sistema de incidencias. ¿En qué puedo ayudarte?</p>
+            </div>
+        </div>
+        <form class="chatbot-form" id="chatbot-form" data-endpoint="{{ route('chatbot.mensajes.store') }}">
+            @csrf
+            <label class="visually-hidden" for="chatbot-input">Escribe tu mensaje</label>
+            <input class="form-control" id="chatbot-input" name="message" type="text" placeholder="Escribe tu mensaje..." autocomplete="off">
+            <button class="btn btn-primary" type="submit" aria-label="Enviar mensaje">
+                <svg class="chatbot-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M3.4 20.2 21 12 3.4 3.8 3 10.2l12.2 1.8L3 13.8l.4 6.4Z"/>
+                </svg>
+            </button>
+        </form>
+    </aside>
+    <button type="button" class="chatbot-toggle" id="chatbot-toggle" aria-label="Abrir chat con TungaBot" aria-controls="chatbot-panel" aria-expanded="false">
+        <img class="chatbot-toggle-image" src="{{ asset('images/chatbot/tungasuquita.png') }}" alt="">
+        <span class="chatbot-toggle-label">TungaBot</span>
+    </button>
+
     <div class="d-lg-flex panel-shell">
         <aside class="offcanvas-lg offcanvas-start bg-white border-end panel-sidebar" tabindex="-1" id="panelSidebar" aria-labelledby="panelSidebarLabel">
             <div class="offcanvas-header d-lg-none border-bottom">
@@ -38,13 +68,18 @@
 
                     @if ($rol === 'Administrador')
                         <a class="nav-link {{ request()->routeIs('usuarios.*') ? 'active' : 'text-dark' }}" href="{{ route('usuarios.index') }}">Usuarios</a>
+                        <a class="nav-link {{ request()->routeIs('secciones.*') ? 'active' : 'text-dark' }}" href="{{ route('secciones.index') }}">Secciones</a>
                         <a class="nav-link {{ request()->routeIs('incidencias.*') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.index') }}">Incidencias</a>
                     @elseif ($rol === 'Profesor')
                         <a class="nav-link {{ request()->routeIs('incidencias.*') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.index') }}">Incidencias</a>
                         <span class="nav-link text-secondary disabled">Alumnos</span>
                     @elseif (in_array($rol, ['Directora', 'Subdirector'], true))
                         <span class="nav-link text-secondary disabled">Alumnos</span>
-                        <span class="nav-link text-secondary disabled">Urgencias</span>
+                        <a class="nav-link {{ request()->routeIs('secciones.*') ? 'active' : 'text-dark' }}" href="{{ route('secciones.index') }}">Secciones</a>
+                        @if ($rol === 'Directora' || $rol === 'Subdirector')
+                            <a class="nav-link {{ request()->routeIs('incidencias.urgencias') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.urgencias') }}">Urgencias</a>
+                            <a class="nav-link {{ request()->routeIs('incidencias.index') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.index') }}">Todas las incidencias</a>
+                        @endif
                     @endif
                 </nav>
             </div>

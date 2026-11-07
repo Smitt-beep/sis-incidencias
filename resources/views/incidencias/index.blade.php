@@ -5,10 +5,14 @@
 @section('content')
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
-            <h1 class="h2 mb-1">Incidencias</h1>
-            <p class="text-secondary mb-0">Registro y seguimiento de incidencias.</p>
+            <h1 class="h2 mb-1">{{ ($esUrgencias ?? false) ? 'Urgencias' : 'Incidencias' }}</h1>
+            <p class="text-secondary mb-0">
+                {{ ($esUrgencias ?? false) ? 'Incidencias graves pendientes o en proceso.' : 'Registro y seguimiento de incidencias.' }}
+            </p>
         </div>
-        <a href="{{ route('incidencias.create') }}" class="btn btn-primary">+ Registrar incidencia</a>
+        @if (in_array(session('usuario_rol'), ['Administrador', 'Profesor'], true))
+            <a href="{{ route('incidencias.create') }}" class="btn btn-primary">+ Registrar incidencia</a>
+        @endif
     </div>
 
     <div class="card border-0 shadow-sm">
@@ -57,12 +61,17 @@
                             <td>
                                 <div class="d-flex flex-wrap justify-content-end gap-2">
                                     <a href="{{ route('incidencias.show', $incidencia) }}" class="btn btn-sm btn-outline-secondary">Ver</a>
-                                    <a href="{{ route('incidencias.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar</a>
-                                    <form action="{{ route('incidencias.destroy', $incidencia) }}" method="POST" onsubmit="return confirm('¿Eliminar esta incidencia?')">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
-                                    </form>
+                                    @if (session('usuario_rol') === 'Administrador'
+                                        || (session('usuario_rol') === 'Profesor' && (int) $incidencia->usuario_id === (int) session('usuario_id')))
+                                        <a href="{{ route('incidencias.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar</a>
+                                    @endif
+                                    @if (in_array(session('usuario_rol'), ['Administrador', 'Directora'], true))
+                                        <form action="{{ route('incidencias.destroy', $incidencia) }}" method="POST" onsubmit="return confirm('¿Eliminar esta incidencia?')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                                        </form>
+                                    @endif
                                 </div>
                             </td>
                         </tr>

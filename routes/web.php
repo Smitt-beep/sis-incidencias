@@ -1,9 +1,12 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\UserController;
+use App\Http\Controllers\ChatbotMensajeController;
 use App\Http\Controllers\IncidenciaController;
+use App\Http\Controllers\IncidenciaFotografiaController;
+use App\Http\Controllers\SeccionController;
+use App\Http\Controllers\UserController;
+use Illuminate\Support\Facades\Route;
 
 // Ruta principal: redirige al login por defecto
 Route::get('/', function () {
@@ -22,10 +25,47 @@ Route::post('/register', [UserController::class, 'register'])->name('register.st
 Route::middleware(['auth.custom'])->group(function () {
     Route::get('/dashboard', [AuthController::class, 'dashboard'])->name('dashboard');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+    
+    // Ruta POST original para procesar los mensajes del chatbot
+    Route::post('/chatbot/mensajes', [ChatbotMensajeController::class, 'store'])->name('chatbot.mensajes.store');
+    
+    // Ruta GET de respaldo para redirigir si entran directamente por la URL
+    Route::get('/chatbot/mensajes', function () {
+        return redirect()->route('dashboard');
+    });
 });
 
-Route::middleware(['auth.custom', 'role:Administrador,Profesor'])->group(function () {
-    Route::resource('incidencias', IncidenciaController::class);
+Route::middleware(['auth.custom'])->group(function () {
+    Route::get('incidencias/urgencias', [IncidenciaController::class, 'urgencias'])
+        ->middleware('role:Administrador,Directora,Subdirector')
+        ->name('incidencias.urgencias');
+    Route::get('incidencias', [IncidenciaController::class, 'index'])
+        ->middleware('role:Administrador,Profesor,Directora,Subdirector')
+        ->name('incidencias.index');
+    Route::get('incidencias/create', [IncidenciaController::class, 'create'])
+        ->middleware('role:Administrador,Profesor')
+        ->name('incidencias.create');
+    Route::post('incidencias', [IncidenciaController::class, 'store'])
+        ->middleware('role:Administrador,Profesor')
+        ->name('incidencias.store');
+    Route::get('incidencias/{incidencia}/edit', [IncidenciaController::class, 'edit'])
+        ->middleware('role:Administrador,Profesor')
+        ->name('incidencias.edit');
+    Route::get('incidencias/{incidencia}/fotografias/{fotografia}', [IncidenciaFotografiaController::class, 'show'])
+        ->middleware('role:Administrador,Profesor,Directora,Subdirector')
+        ->name('incidencias.fotografias.show');
+    Route::delete('incidencias/{incidencia}/fotografias/{fotografia}', [IncidenciaFotografiaController::class, 'destroy'])
+        ->middleware('role:Administrador,Profesor')
+        ->name('incidencias.fotografias.destroy');
+    Route::match(['put', 'patch'], 'incidencias/{incidencia}', [IncidenciaController::class, 'update'])
+        ->middleware('role:Administrador,Profesor')
+        ->name('incidencias.update');
+    Route::delete('incidencias/{incidencia}', [IncidenciaController::class, 'destroy'])
+        ->middleware('role:Administrador,Directora')
+        ->name('incidencias.destroy');
+    Route::get('incidencias/{incidencia}', [IncidenciaController::class, 'show'])
+        ->middleware('role:Administrador,Profesor,Directora,Subdirector')
+        ->name('incidencias.show');
 });
 
 Route::middleware(['auth.custom', 'role:Administrador'])->group(function () {
@@ -34,4 +74,10 @@ Route::middleware(['auth.custom', 'role:Administrador'])->group(function () {
     Route::post('usuarios/{usuario}/rechazar', [UserController::class, 'rechazar'])->name('usuarios.rechazar');
     Route::post('usuarios/{usuario}/activar', [UserController::class, 'activar'])->name('usuarios.activar');
     Route::post('usuarios/{usuario}/desactivar', [UserController::class, 'desactivar'])->name('usuarios.desactivar');
+});
+
+Route::middleware(['auth.custom', 'role:Administrador,Directora,Subdirector'])->group(function () {
+    Route::resource('secciones', SeccionController::class)
+        ->except(['show', 'destroy'])
+        ->parameters(['secciones' => 'seccion']);
 });
