@@ -2,10 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AsignacionDocente;
+use App\Models\Curso;
 use App\Models\Rol;
+use App\Models\Seccion;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -31,7 +36,10 @@ class UserController extends Controller
             ->get();
         $rolesConfigured = $roles->pluck('nombre_rol')->unique()->count() === count(self::ADMIN_CREATED_ROLE_NAMES);
 
-        return view('usuarios.create', compact('roles', 'rolesConfigured'));
+        return view('usuarios.create', array_merge(
+            compact('roles', 'rolesConfigured'),
+            $this->assignmentFormData()
+        ));
     }
 
     public function showRegister()
@@ -106,15 +114,24 @@ class UserController extends Controller
             'rol_id.in' => 'El cargo seleccionado no está permitido.',
         ]);
 
-        User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'dni' => $validated['dni'],
-            'password' => $validated['password'],
-            'rol_id' => $validated['rol_id'],
-            'estado_aprobacion' => 'Aprobado',
-            'activo' => true,
-        ]);
+        $role = $roles->firstWhere('id', (int) $validated['rol_id']);
+        $assignment = $role->nombre_rol === 'Profesor'
+            ? $this->validatedTeacherAssignment($request)
+            : null;
+
+        DB::transaction(function () use ($validated, $assignment): void {
+            $usuario = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'dni' => $validated['dni'],
+                'password' => $validated['password'],
+                'rol_id' => $validated['rol_id'],
+                'estado_aprobacion' => 'Aprobado',
+                'activo' => true,
+            ]);
+
+            $this->saveTeacherAssignment($usuario, $assignment);
+        });
 
         return redirect()->route('usuarios.index')->with('success', 'Usuario creado correctamente.');
     }
@@ -124,7 +141,13 @@ class UserController extends Controller
      */
     public function edit(User $usuario)
     {
-        return view('usuarios.edit', compact('usuario'));
+        $asignaciones = $usuario->asignacionesDocentes()->get(['curso_id', 'seccion_id']);
+        $esProfesor = $usuario->rol?->nombre_rol === 'Profesor';
+
+        return view('usuarios.edit', array_merge(
+            compact('usuario', 'esProfesor'),
+            $this->assignmentFormData($asignaciones)
+        ));
     }
 
     /**
@@ -143,9 +166,115 @@ class UserController extends Controller
             unset($validated['password']);
         }
 
-        $usuario->update($validated);
+        $assignment = $usuario->rol?->nombre_rol === 'Profesor'
+            ? $this->validatedTeacherAssignment($request)
+            : null;
+
+        DB::transaction(function () use ($usuario, $validated, $assignment): void {
+            $usuario->update($validated);
+            $this->saveTeacherAssignment($usuario, $assignment);
+        });
 
         return redirect()->route('usuarios.index')->with('success', 'Usuario actualizado correctamente.');
+    }
+
+    /**
+     * @param \Illuminate\Support\Collection<int, AsignacionDocente>|null $asignaciones
+     * @return array<string, mixed>
+     */
+    private function assignmentFormData($asignaciones = null): array
+    {
+        $cursos = Curso::orderBy('nombre')->get();
+        $secciones = Seccion::orderBy('grado')->orderBy('seccion')->get();
+        $asignaciones ??= collect();
+        $cursosAsignados = $asignaciones->pluck('curso_id')->unique()->values();
+        $cursoDefault = $cursosAsignados->count() === 1 ? $cursosAsignados->first() : '';
+        $cursoSeleccionado = old('curso_id', $cursoDefault);
+        $seccionesDefault = $asignaciones
+            ->where('curso_id', (int) $cursoSeleccionado)
+            ->pluck('seccion_id')
+            ->all();
+        $seccionesSeleccionadas = old('secciones', $seccionesDefault);
+        $seccionesSeleccionadas = is_array($seccionesSeleccionadas) ? $seccionesSeleccionadas : [];
+        $seccionesAsignadas = $secciones->whereIn('id', $seccionesSeleccionadas);
+        $gradosDefault = $seccionesAsignadas->pluck('grado')->unique()->values()->all();
+        $gradosSeleccionados = old('grados', $gradosDefault);
+
+        return [
+            'cursos' => $cursos,
+            'secciones' => $secciones,
+            'grados' => $secciones->pluck('grado')->unique()->values(),
+            'cursoSeleccionado' => $cursoSeleccionado,
+            'gradosSeleccionados' => is_array($gradosSeleccionados) ? $gradosSeleccionados : [],
+            'seccionesSeleccionadas' => $seccionesSeleccionadas,
+        ];
+    }
+
+    /**
+     * @return array{curso_id: int, grados: array<int, string>, secciones: array<int, int>}|null
+     */
+    private function validatedTeacherAssignment(Request $request): ?array
+    {
+        $grados = $request->input('grados', []);
+        $secciones = $request->input('secciones', []);
+
+        if (blank($request->input('curso_id')) && blank($grados) && blank($secciones)) {
+            return null;
+        }
+
+        $gradosDisponibles = Seccion::query()->distinct()->orderBy('grado')->pluck('grado')->all();
+        $validated = $request->validate([
+            'curso_id' => ['required', 'integer', 'exists:cursos,id'],
+            'grados' => ['required', 'array', 'min:1'],
+            'grados.*' => ['required', 'string', 'distinct', Rule::in($gradosDisponibles)],
+            'secciones' => ['required', 'array', 'min:1'],
+            'secciones.*' => ['required', 'integer', 'distinct', 'exists:secciones,id'],
+        ], [
+            'curso_id.required' => 'Seleccione un curso para la asignación.',
+            'curso_id.exists' => 'El curso seleccionado no está disponible.',
+            'grados.required' => 'Seleccione al menos un grado.',
+            'grados.*.in' => 'Uno de los grados seleccionados no está disponible.',
+            'secciones.required' => 'Seleccione al menos una sección.',
+            'secciones.*.exists' => 'Una de las secciones seleccionadas no está disponible.',
+        ]);
+
+        $gradosSeleccionados = collect($validated['grados'])->unique()->sort()->values();
+        $gradosDeSecciones = Seccion::query()
+            ->whereIn('id', $validated['secciones'])
+            ->pluck('grado')
+            ->unique()
+            ->sort()
+            ->values();
+
+        if ($gradosSeleccionados->all() !== $gradosDeSecciones->all()) {
+            throw ValidationException::withMessages([
+                'secciones' => 'Seleccione secciones que correspondan exactamente a los grados elegidos.',
+            ]);
+        }
+
+        return $validated;
+    }
+
+    /**
+     * @param array{curso_id: int, grados: array<int, string>, secciones: array<int, int>}|null $assignment
+     */
+    private function saveTeacherAssignment(User $usuario, ?array $assignment): void
+    {
+        if ($assignment === null) {
+            return;
+        }
+
+        $usuario->asignacionesDocentes()
+            ->where('curso_id', $assignment['curso_id'])
+            ->delete();
+
+        foreach ($assignment['secciones'] as $seccionId) {
+            AsignacionDocente::create([
+                'usuario_id' => $usuario->id,
+                'curso_id' => $assignment['curso_id'],
+                'seccion_id' => $seccionId,
+            ]);
+        }
     }
 
     /**

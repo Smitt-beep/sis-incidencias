@@ -74,13 +74,10 @@ class IncidenciaController extends Controller
             ->orderByDesc('hora');
     }
 
-    public function create()
-    {   //obtiene los cursos para mostrarlos en el formulario.
-        $cursos = Curso::orderBy('nombre')->get();
-        //obtiene las secciones ordenadas por grado y seccion.
-        $secciones = Seccion::orderBy('grado')->orderBy('seccion')->get();
-        //obtiene los estudiantes junto con su seccion
-        $estudiantes = Estudiante::with('seccion')->orderBy('nombre')->get();
+    public function create(Request $request)
+    {
+        $user = $this->sessionUser($request);
+        $formOptions = $this->incidenceFormOptions($user);
         $tiposIncidencia = TipoIncidencia::orderBy('nombre')->get();
         //obtiene sus gravedades registradas en la base de datos
         $gravedades = Gravedad::orderByRaw("
@@ -100,14 +97,11 @@ class IncidenciaController extends Controller
                 ELSE 4
             END
         ")->get();
-        return view('incidencias.create', compact(
-            'cursos',
-            'secciones',
-            'estudiantes',
+        return view('incidencias.create', array_merge($formOptions, compact(
             'tiposIncidencia',
             'gravedades',
             'estados',
-        ));
+        )));
     }
 
     public function store(Request $request)
@@ -115,7 +109,7 @@ class IncidenciaController extends Controller
         $user = $this->sessionUser($request);
         Gate::forUser($user)->authorize('create', Incidencia::class);
 
-        $datos = $this->validatedData($request);
+        $datos = $this->validatedData($request, $user);
         $fotografias = $this->validatedPhotographs($request);
         $tipos = $request->validate([
             'tipos' => ['required', 'array', 'min:1'],
@@ -178,9 +172,8 @@ class IncidenciaController extends Controller
             'tiposIncidencia',
             'fotografias',
         ]);
-        $cursos = Curso::orderBy('nombre')->get();
-        $secciones = Seccion::orderBy('grado')->orderBy('seccion')->get();
-        $estudiantes = Estudiante::with('seccion')->orderBy('nombre')->get();
+        $user = $this->sessionUser($request);
+        $formOptions = $this->incidenceFormOptions($user);
         $tiposIncidencia = TipoIncidencia::orderBy('nombre')->get();
         $tiposIncidenciaSeleccionados = $incidencia->tiposIncidencia->pluck('id')->all();
         $fotografiasActuales = $incidencia->fotografias->count();
@@ -203,25 +196,23 @@ class IncidenciaController extends Controller
             ELSE 4
         END
           ")->get();
-        return view('incidencias.edit', compact(
+        return view('incidencias.edit', array_merge($formOptions, compact(
             'incidencia',
-            'cursos',
-            'secciones',
-            'estudiantes',
             'tiposIncidencia',
             'tiposIncidenciaSeleccionados',
             'fotografiasActuales',
             'fotografiasDisponibles',
             'gravedades',
             'estados'
-        ));
+        )));
     }
 
     public function update(Request $request, Incidencia $incidencia)
     {
         $this->authorizeIncidencia($request, $incidencia, 'update');
 
-        $datos = $this->validatedData($request);
+        $user = $this->sessionUser($request);
+        $datos = $this->validatedData($request, $user);
         $fotografias = $this->validatedPhotographs($request);
         $tipos = $request->validate([
             'tipos' => ['required', 'array', 'min:1'],
@@ -284,13 +275,59 @@ class IncidenciaController extends Controller
         return User::with('rol')->findOrFail($request->session()->get('usuario_id'));
     }
 
-    private function validatedData(Request $request): array
+    private function incidenceFormOptions(User $user): array
+    {
+        $esProfesor = $user->rol?->nombre_rol === 'Profesor';
+        $asignaciones = $esProfesor
+            ? $user->asignacionesDocentes()->get(['curso_id', 'seccion_id'])
+            : collect();
+
+        $cursosQuery = Curso::query()->orderBy('nombre');
+        $seccionesQuery = Seccion::query()->orderBy('grado')->orderBy('seccion');
+        $estudiantesQuery = Estudiante::with('seccion')->orderBy('nombre');
+        $sectionCourseIds = [];
+
+        if ($esProfesor) {
+            $courseIds = $asignaciones->pluck('curso_id')->unique()->all();
+            $sectionIds = $asignaciones->pluck('seccion_id')->unique()->all();
+            $cursosQuery->whereIn('id', $courseIds);
+            $seccionesQuery->whereIn('id', $sectionIds);
+            $estudiantesQuery->whereIn('seccion_id', $sectionIds);
+            $sectionCourseIds = $asignaciones
+                ->groupBy('seccion_id')
+                ->map(fn ($rows) => $rows->pluck('curso_id')->map(fn ($id) => (string) $id)->all())
+                ->all();
+        }
+
+        return [
+            'cursos' => $cursosQuery->get(),
+            'secciones' => $seccionesQuery->get(),
+            'estudiantes' => $estudiantesQuery->get(),
+            'sectionCourseIds' => $sectionCourseIds,
+            'esProfesor' => $esProfesor,
+        ];
+    }
+
+    private function validatedData(Request $request, User $user): array
     {
         $sectionId = $request->input('seccion_id');
+        $courseId = $request->input('curso_id');
+        $courseIdForRule = is_numeric($courseId) ? (int) $courseId : 0;
+        $esProfesor = $user->rol?->nombre_rol === 'Profesor';
+        $courseRule = $esProfesor
+            ? Rule::exists('asignaciones_docentes', 'curso_id')
+                ->where(fn ($query) => $query->where('usuario_id', $user->getKey()))
+            : Rule::exists('cursos', 'id');
+        $sectionRule = $esProfesor
+            ? Rule::exists('asignaciones_docentes', 'seccion_id')
+                ->where(fn ($query) => $query
+                    ->where('usuario_id', $user->getKey())
+                    ->where('curso_id', $courseIdForRule))
+            : Rule::exists('secciones', 'id');
 
         $datos = $request->validate([
-            'curso_id' => ['required', 'integer', 'exists:cursos,id'],
-            'seccion_id' => ['required', 'integer', 'exists:secciones,id'],
+            'curso_id' => ['required', 'integer', $courseRule],
+            'seccion_id' => ['required', 'integer', $sectionRule],
             'estudiante_id' => [
                 'required',
                 'integer',
@@ -306,9 +343,9 @@ class IncidenciaController extends Controller
             'estado_id' => ['required', 'integer', 'exists:estados,id'],
         ], [
             'curso_id.required' => 'Seleccione un curso.',
-            'curso_id.exists' => 'El curso seleccionado no existe.',
+            'curso_id.exists' => 'El curso seleccionado no existe o no está asignado a su cuenta.',
             'seccion_id.required' => 'Seleccione una sección.',
-            'seccion_id.exists' => 'La sección seleccionada no existe.',
+            'seccion_id.exists' => 'La sección no existe o no está asignada a su cuenta para el curso elegido.',
             'estudiante_id.required' => 'Seleccione un estudiante.',
             'estudiante_id.exists' => 'El estudiante no existe o no pertenece a la sección seleccionada.',
             'gravedad_id.required' => 'La gravedad es obligatoria.',

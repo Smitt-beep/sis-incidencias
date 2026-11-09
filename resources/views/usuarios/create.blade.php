@@ -44,6 +44,12 @@
                         </select>
                         @error('rol_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
+                    @php
+                        $profesorRolId = $roles->firstWhere('nombre_rol', 'Profesor')?->id;
+                    @endphp
+                    <div class="col-12" id="teacher-assignment-wrapper" @if ((string) old('rol_id') !== (string) $profesorRolId) hidden @endif>
+                        @include('usuarios._asignacion_docente')
+                    </div>
                     <div class="col-md-6">
                         <label for="password" class="form-label">Contraseña</label>
                         <input type="password" name="password" id="password" class="form-control @error('password') is-invalid @enderror" autocomplete="new-password" minlength="8" required>
@@ -62,4 +68,21 @@
             </form>
         </div>
     </div>
-@endsection
+
+    <script>
+        const roleSelect = document.getElementById('rol_id');
+        const teacherAssignmentWrapper = document.getElementById('teacher-assignment-wrapper');
+        const teacherRoleId = @json($profesorRolId);
+
+        function toggleTeacherAssignment() {
+            const isTeacher = roleSelect.value === String(teacherRoleId);
+            teacherAssignmentWrapper.hidden = !isTeacher;
+            teacherAssignmentWrapper.querySelectorAll('select, input').forEach((field) => {
+                field.disabled = !isTeacher;
+            });
+        }
+
+        roleSelect.addEventListener('change', toggleTeacherAssignment);
+        toggleTeacherAssignment();
+    </script>
+    @endsection

@@ -29,6 +29,11 @@
                         <input type="email" name="email" id="email" value="{{ old('email', $usuario->email) }}" class="form-control @error('email') is-invalid @enderror" maxlength="255" autocomplete="email" required>
                         @error('email') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
+                    @if ($esProfesor)
+                        <div class="col-12">
+                            @include('usuarios._asignacion_docente')
+                        </div>
+                    @endif
                     <div class="col-md-6">
                         <label for="password" class="form-label">Nueva contraseña (opcional)</label>
                         <input type="password" name="password" id="password" class="form-control @error('password') is-invalid @enderror" autocomplete="new-password">

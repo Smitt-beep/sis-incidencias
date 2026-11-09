@@ -30,7 +30,11 @@
                     <select name="seccion_id" id="seccion_id" class="form-select @error('seccion_id') is-invalid @enderror" required>
                         <option value="">Seleccione una sección</option>
                         @foreach ($secciones as $seccion)
-                        <option value="{{ $seccion->id }}" @selected(old('seccion_id', $incidencia->estudiante?->seccion_id) == $seccion->id)>
+                        <option
+                            value="{{ $seccion->id }}"
+                            data-cursos="{{ implode(',', $sectionCourseIds[$seccion->id] ?? []) }}"
+                            @selected(old('seccion_id', $incidencia->estudiante?->seccion_id) == $seccion->id)
+                        >
                             {{ $seccion->grado }} - {{ $seccion->seccion }}
                         </option>
                         @endforeach
@@ -266,9 +270,29 @@
 </div>
 
 <script>
+    const courseSelect = document.getElementById('curso_id');
     const sectionSelect = document.getElementById('seccion_id');
     const studentSelect = document.getElementById('estudiante_id');
     const studentOptions = Array.from(studentSelect.querySelectorAll('option[data-seccion]'));
+    const sectionOptions = Array.from(sectionSelect.querySelectorAll('option[data-cursos]'));
+    const isTeacher = @json($esProfesor);
+
+    function filterSections() {
+        const courseId = courseSelect.value;
+        const selectedSection = sectionSelect.value;
+
+        sectionSelect.disabled = isTeacher && courseId === '';
+        sectionOptions.forEach((option) => {
+            const assignedCourses = option.dataset.cursos.split(',');
+            const isAvailable = !isTeacher || assignedCourses.includes(courseId);
+            option.hidden = !isAvailable;
+            option.disabled = !isAvailable;
+        });
+
+        if (!sectionOptions.some((option) => option.value === selectedSection && !option.disabled)) {
+            sectionSelect.value = '';
+        }
+    }
 
     function filterStudents() {
         const sectionId = sectionSelect.value;
@@ -286,7 +310,12 @@
         }
     }
 
+    courseSelect.addEventListener('change', () => {
+        filterSections();
+        filterStudents();
+    });
     sectionSelect.addEventListener('change', filterStudents);
+    filterSections();
     filterStudents();
 </script>
 @endsection

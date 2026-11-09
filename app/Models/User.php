@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -66,6 +67,16 @@ class User extends Authenticatable
     public function asignacionesDocentes()
     {
         return $this->hasMany(AsignacionDocente::class, 'usuario_id');
+    }
+
+    public function seccionesDocentes(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Seccion::class,
+            'asignaciones_docentes',
+            'usuario_id',
+            'seccion_id'
+        )->withPivot('curso_id')->distinct();
     }
 
     public function chatbotConversaciones(): HasMany
