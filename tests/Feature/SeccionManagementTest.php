@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\AsignacionDocente;
+use App\Models\Curso;
 use App\Models\Seccion;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
@@ -20,9 +22,16 @@ class SeccionManagementTest extends TestCase
             $table->string('email');
             $table->string('dni', 8);
             $table->string('password');
+            $table->string('grado_registro')->nullable();
+            $table->foreignId('curso_registro_id')->nullable();
             $table->string('estado_aprobacion')->nullable();
             $table->boolean('activo')->default(true);
             $table->timestamps();
+        });
+
+        Schema::create('cursos', function (Blueprint $table): void {
+            $table->id();
+            $table->string('nombre');
         });
 
         Schema::create('secciones', function (Blueprint $table): void {
@@ -30,20 +39,62 @@ class SeccionManagementTest extends TestCase
             $table->string('grado');
             $table->string('seccion');
         });
+
+        Schema::create('asignaciones_docentes', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('usuario_id');
+            $table->foreignId('curso_id');
+            $table->foreignId('seccion_id');
+            $table->timestamps();
+        });
     }
 
-    public function test_authorized_roles_can_view_sections_sorted_by_grade_and_section(): void
+    public function test_authorized_roles_can_view_one_grade_row_with_courses_and_sections(): void
     {
-        $this->createApprovedUser('Administrador');
-        Seccion::create(['grado' => '2.º', 'seccion' => 'B']);
-        Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
+        $admin = $this->createApprovedUser('Administrador');
+        $matematica = Curso::create(['nombre' => 'Matemática']);
+        $comunicacion = Curso::create(['nombre' => 'Comunicación']);
+        $seccionA = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
+        $seccionB = Seccion::create(['grado' => '1.º', 'seccion' => 'B']);
+        Seccion::create(['grado' => '2.º', 'seccion' => 'A']);
+
+        foreach ([$seccionA, $seccionB] as $seccion) {
+            AsignacionDocente::create([
+                'usuario_id' => $admin->id,
+                'curso_id' => $matematica->id,
+                'seccion_id' => $seccion->id,
+            ]);
+        }
+
+        $registroDocente = User::create([
+            'name' => 'Docente pendiente',
+            'email' => 'docente@example.test',
+            'dni' => '87654321',
+            'password' => 'clave-segura',
+            'estado_aprobacion' => 'Pendiente',
+            'activo' => true,
+        ]);
+        $registroDocente->grado_registro = '2.º';
+        $registroDocente->curso_registro_id = $comunicacion->id;
+        $registroDocente->save();
 
         $response = $this->get(route('secciones.index'));
 
         $response->assertOk()
-            ->assertSee('Gestión de Secciones')
-            ->assertSeeInOrder(['1.º', 'A', '2.º', 'B'])
-            ->assertSee('Secciones');
+            ->assertSee('Gestión de Grados')
+            ->assertSeeInOrder([
+                '1.º',
+                'Matemática',
+                'Sección A',
+                'Sección B',
+                '2.º',
+                'Comunicación',
+                'Sin secciones registradas',
+            ])
+            ->assertSee('Cursos')
+            ->assertSee('Acciones');
+
+        $this->assertSame(2, substr_count($response->getContent(), 'data-grade-row='));
     }
 
     public function test_section_can_be_registered_and_edited(): void

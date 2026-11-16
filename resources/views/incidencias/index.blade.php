@@ -15,6 +15,28 @@
         @endif
     </div>
 
+    @unless ($esUrgencias ?? false)
+        <form action="{{ route('incidencias.index') }}" method="GET" class="row g-2 align-items-end mb-3">
+            <div class="col-sm-8 col-md-6">
+                <label for="buscar-incidencia" class="form-label">Buscar por alumno</label>
+                <input
+                    type="search"
+                    name="buscar"
+                    id="buscar-incidencia"
+                    value="{{ request('buscar') }}"
+                    class="form-control"
+                    placeholder="Nombre del alumno"
+                >
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary">Buscar</button>
+                @if (request()->filled('buscar'))
+                    <a href="{{ route('incidencias.index') }}" class="btn btn-outline-secondary">Limpiar</a>
+                @endif
+            </div>
+        </form>
+    @endunless
+
     <div class="card border-0 shadow-sm">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChatbotMensajeController;
+use App\Http\Controllers\EstudianteController;
 use App\Http\Controllers\IncidenciaController;
 use App\Http\Controllers\IncidenciaFotografiaController;
 use App\Http\Controllers\SeccionController;
@@ -33,6 +34,17 @@ Route::middleware(['auth.custom'])->group(function () {
     Route::get('/chatbot/mensajes', function () {
         return redirect()->route('dashboard');
     });
+});
+
+Route::middleware(['auth.custom', 'role:Profesor'])->group(function () {
+    Route::get('estudiantes', [EstudianteController::class, 'index'])->name('estudiantes.index');
+    Route::post('estudiantes', [EstudianteController::class, 'store'])->name('estudiantes.store');
+    Route::get('estudiantes/{estudiante}/reporte', [EstudianteController::class, 'reporteSeleccionar'])
+        ->name('estudiantes.reporte.seleccionar');
+    Route::post('estudiantes/{estudiante}/reporte', [EstudianteController::class, 'reportePdf'])
+        ->name('estudiantes.reporte.pdf.post');
+    Route::get('estudiantes/{estudiante}/reporte/todas', [EstudianteController::class, 'reportePdfTodas'])
+        ->name('estudiantes.reporte.pdf');
 });
 
 Route::middleware(['auth.custom'])->group(function () {

@@ -44,7 +44,13 @@ class UserController extends Controller
 
     public function showRegister()
     {
-        return view('auth.register');
+        $grados = Seccion::query()->distinct()->orderBy('grado')->pluck('grado');
+        $cursos = Curso::query()
+            ->where('nombre', 'not like', '% (Taller)')
+            ->orderBy('nombre')
+            ->get(['id', 'nombre']);
+
+        return view('auth.register', compact('grados', 'cursos'));
     }
 
     public function register(Request $request)
@@ -61,6 +67,13 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')],
             'dni' => ['required', 'digits:8', Rule::unique('users', 'dni')],
+            'grado' => ['required', 'string', Rule::exists('secciones', 'grado')],
+            'curso_registro_id' => [
+                'required',
+                'integer',
+                Rule::exists('cursos', 'id')
+                    ->where(fn ($query) => $query->where('nombre', 'not like', '% (Taller)')),
+            ],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ], [
             'dni.required' => 'El DNI es obligatorio.',
@@ -74,15 +87,21 @@ class UserController extends Controller
             'password.confirmed' => 'La confirmación de contraseña no coincide.',
         ]);
 
-        User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'dni' => $validated['dni'],
-            'password' => $validated['password'],
-            'rol_id' => $profesorRole->id,
-            'estado_aprobacion' => 'Pendiente',
-            'activo' => true,
-        ]);
+        DB::transaction(function () use ($validated, $profesorRole): void {
+            $usuario = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'dni' => $validated['dni'],
+                'password' => $validated['password'],
+                'rol_id' => $profesorRole->id,
+                'estado_aprobacion' => 'Pendiente',
+                'activo' => true,
+            ]);
+
+            $usuario->grado_registro = $validated['grado'];
+            $usuario->curso_registro_id = $validated['curso_registro_id'];
+            $usuario->save();
+        });
 
         return redirect()->route('login')->with('success', 'Cuenta registrada correctamente. Está pendiente de aprobación por el administrador.');
     }
@@ -295,9 +314,27 @@ class UserController extends Controller
             ]);
         }
 
-        $usuario->update([
-            'estado_aprobacion' => 'Aprobado',
-        ]);
+        DB::transaction(function () use ($usuario): void {
+            $usuario->update([
+                'estado_aprobacion' => 'Aprobado',
+            ]);
+
+            if (
+                $usuario->rol?->nombre_rol === 'Profesor' &&
+                $usuario->grado_registro !== null &&
+                $usuario->curso_registro_id !== null
+            ) {
+                $secciones = Seccion::where('grado', $usuario->grado_registro)->get(['id']);
+
+                foreach ($secciones as $seccion) {
+                    AsignacionDocente::firstOrCreate([
+                        'usuario_id' => $usuario->id,
+                        'curso_id' => $usuario->curso_registro_id,
+                        'seccion_id' => $seccion->id,
+                    ]);
+                }
+            }
+        });
 
         return back()->with('success', 'Usuario aprobado correctamente.');
     }

@@ -75,6 +75,42 @@
                             </div>
 
                             <div class="col-md-6">
+                                <label for="grado" class="form-label">Grado</label>
+                                <select name="grado"
+                                        id="grado"
+                                        class="form-select @error('grado') is-invalid @enderror"
+                                        required>
+                                    <option value="">Seleccione un grado</option>
+                                    @foreach ($grados as $grado)
+                                        <option value="{{ $grado }}" {{ old('grado') == $grado ? 'selected' : '' }}>
+                                            {{ $grado }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('grado')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+
+                            <div class="col-md-6">
+                                <label for="curso_registro_id" class="form-label">Curso</label>
+                                <select name="curso_registro_id"
+                                        id="curso_registro_id"
+                                        class="form-select @error('curso_registro_id') is-invalid @enderror"
+                                        required>
+                                    <option value="">Seleccione un curso</option>
+                                    @foreach ($cursos as $curso)
+                                        <option value="{{ $curso->id }}" {{ old('curso_registro_id') == $curso->id ? 'selected' : '' }}>
+                                            {{ $curso->nombre }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('curso_registro_id')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+
+                            <div class="col-md-6">
                                 <label class="form-label">Cargo / Rol</label>
                                 <div class="form-control-plaintext">Profesor</div>
                             </div>

@@ -37,10 +37,17 @@ class IncidenciaController extends Controller
             $query->where('usuario_id', $user->getKey());
         }
 
-        $incidencias = $query->paginate(15);
+        $buscar = trim((string) $request->input('buscar', ''));
+        if ($buscar !== '') {
+            $operator = DB::connection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
+            $query->whereHas('estudiante', fn (Builder $estudianteQuery) => $estudianteQuery
+                ->where('nombre', $operator, '%'.$buscar.'%'));
+        }
+
+        $incidencias = $query->paginate(15)->withQueryString();
         $esUrgencias = false;
 
-        return view('incidencias.index', compact('incidencias', 'esUrgencias'));
+        return view('incidencias.index', compact('incidencias', 'esUrgencias', 'buscar'));
     }
 
     public function urgencias(Request $request)
