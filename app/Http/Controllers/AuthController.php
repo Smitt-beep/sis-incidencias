@@ -219,7 +219,7 @@ class AuthController extends Controller
             'estudiante.seccion:id,grado',
         ])
             ->whereBetween('fecha', [$inicioSemana->toDateString(), $finSemana->toDateString()])
-            ->get(['id', 'fecha', 'gravedad_id', 'curso_id', 'estudiante_id', 'tipo_aula']);
+            ->get(['id', 'fecha', 'gravedad_id', 'curso_id', 'estudiante_id']);
 
         $incMes = Incidencia::with([
             'gravedad:id,nombre',
@@ -227,108 +227,78 @@ class AuthController extends Controller
             'estudiante.seccion:id,grado',
         ])
             ->whereBetween('fecha', [$inicioMes->toDateString(), $finMes->toDateString()])
-            ->get(['id', 'fecha', 'gravedad_id', 'curso_id', 'estudiante_id', 'tipo_aula']);
+            ->get(['id', 'fecha', 'gravedad_id', 'curso_id', 'estudiante_id']);
+
+        $diasSemana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+        $cantidadSemanasMes = (int) ceil($finMes->day / 7);
+        $semanasMes = array_map(
+            fn ($numero) => "Semana {$numero}",
+            range(1, $cantidadSemanasMes)
+        );
 
         return [
             'tipo' => 'admin',
-            'semana' => [
-                'porGrado' => $this->conteosPorGradoAdmin($incSemana),
-                'porGradoApilado' => $this->seriesPorGravedadAdmin(
-                    $incSemana,
-                    fn ($incidencia) => $incidencia->estudiante?->seccion?->grado
-                ),
-                'porCursoTeoria' => $this->conteosPorCursoAdmin($incSemana, 'teoria'),
-                'porCursoTeoriaApilado' => $this->seriesPorGravedadAdmin(
-                    $incSemana,
-                    fn ($incidencia) => $incidencia->tipo_aula === 'teoria'
-                        ? $incidencia->curso?->nombre
-                        : null
-                ),
-                'porCursoTaller' => $this->conteosPorCursoAdmin($incSemana, 'taller'),
-                'porCursoTallerApilado' => $this->seriesPorGravedadAdmin(
-                    $incSemana,
-                    fn ($incidencia) => $incidencia->tipo_aula === 'taller'
-                        ? $incidencia->curso?->nombre
-                        : null
-                ),
-                'gravedad' => $this->conteoPorGravedad($incSemana),
-            ],
-            'mes' => [
-                'porGrado' => $this->conteosPorGradoAdmin($incMes),
-                'porGradoApilado' => $this->seriesPorGravedadAdmin(
-                    $incMes,
-                    fn ($incidencia) => $incidencia->estudiante?->seccion?->grado
-                ),
-                'porCursoTeoria' => $this->conteosPorCursoAdmin($incMes, 'teoria'),
-                'porCursoTeoriaApilado' => $this->seriesPorGravedadAdmin(
-                    $incMes,
-                    fn ($incidencia) => $incidencia->tipo_aula === 'teoria'
-                        ? $incidencia->curso?->nombre
-                        : null
-                ),
-                'porCursoTaller' => $this->conteosPorCursoAdmin($incMes, 'taller'),
-                'porCursoTallerApilado' => $this->seriesPorGravedadAdmin(
-                    $incMes,
-                    fn ($incidencia) => $incidencia->tipo_aula === 'taller'
-                        ? $incidencia->curso?->nombre
-                        : null
-                ),
-                'gravedad' => $this->conteoPorGravedad($incMes),
-            ],
+            'semana' => $this->resumenPeriodoDashboardAdmin(
+                $incSemana,
+                $diasSemana,
+                fn ($incidencia) => Carbon::parse($incidencia->fecha)->dayOfWeekIso - 1
+            ),
+            'mes' => $this->resumenPeriodoDashboardAdmin(
+                $incMes,
+                $semanasMes,
+                fn ($incidencia) => intdiv(Carbon::parse($incidencia->fecha)->day - 1, 7)
+            ),
         ];
     }
 
-    private function seriesPorGravedadAdmin(Collection $incidencias, callable $categoria): array
+    private function resumenPeriodoDashboardAdmin(
+        Collection $incidencias,
+        array $labels,
+        callable $indicePeriodo
+    ): array
     {
-        $conteos = $incidencias
-            ->filter(fn ($incidencia) => $categoria($incidencia) !== null)
-            ->groupBy(fn ($incidencia) => $categoria($incidencia))
-            ->sortKeys(SORT_NATURAL);
+        $valores = array_fill(0, count($labels), 0);
+        $porGrado = [];
+        $porCurso = [];
 
-        $series = [];
-        foreach (['Leve', 'Intermedia', 'Grave'] as $nombreGravedad) {
-            $series[$nombreGravedad] = $conteos
-                ->map(fn (Collection $grupo) => $grupo
-                    ->filter(fn ($incidencia) => $incidencia->gravedad?->nombre === $nombreGravedad)
-                    ->count())
-                ->values()
-                ->all();
+        foreach ($incidencias as $incidencia) {
+            $indice = $indicePeriodo($incidencia);
+            if (!array_key_exists($indice, $valores)) {
+                continue;
+            }
+
+            $valores[$indice]++;
+            $grado = $incidencia->estudiante?->seccion?->grado;
+            $curso = $incidencia->curso?->nombre;
+
+            if ($grado !== null) {
+                $porGrado[$grado] ??= array_fill(0, count($labels), 0);
+                $porGrado[$grado][$indice]++;
+            }
+
+            if ($curso !== null) {
+                $porCurso[$curso] ??= array_fill(0, count($labels), 0);
+                $porCurso[$curso][$indice]++;
+            }
         }
 
-        return [
-            'labels' => $conteos->keys()->values()->all(),
-            'series' => $series,
-        ];
-    }
-
-    private function conteosPorGradoAdmin(Collection $incidencias): array
-    {
-        $conteos = $incidencias
-            ->filter(fn ($incidencia) => $incidencia->estudiante?->seccion?->grado !== null)
-            ->groupBy(fn ($incidencia) => $incidencia->estudiante->seccion->grado)
-            ->map(fn (Collection $grupo) => $grupo->count())
-            ->sortKeys(SORT_NATURAL);
+        ksort($porGrado, SORT_NATURAL);
+        ksort($porCurso, SORT_NATURAL | SORT_FLAG_CASE);
 
         return [
-            'labels' => $conteos->keys()->values()->all(),
-            'valores' => $conteos->values()->all(),
-        ];
-    }
-
-    private function conteosPorCursoAdmin(Collection $incidencias, string $tipoAula): array
-    {
-        $conteos = $incidencias
-            ->filter(fn ($incidencia) =>
-                $incidencia->tipo_aula === $tipoAula
-                && $incidencia->curso?->nombre !== null
-            )
-            ->groupBy(fn ($incidencia) => $incidencia->curso->nombre)
-            ->map(fn (Collection $grupo) => $grupo->count())
-            ->sortKeys();
-
-        return [
-            'labels' => $conteos->keys()->values()->all(),
-            'valores' => $conteos->values()->all(),
+            'labels' => $labels,
+            'valores' => $valores,
+            'porGrado' => array_map(
+                fn ($grado, $conteos) => ['grado' => $grado, 'valores' => $conteos],
+                array_keys($porGrado),
+                array_values($porGrado)
+            ),
+            'porCurso' => array_map(
+                fn ($curso, $conteos) => ['curso' => $curso, 'valores' => $conteos],
+                array_keys($porCurso),
+                array_values($porCurso)
+            ),
+            'gravedad' => $this->conteoPorGravedad($incidencias),
         ];
     }
 }

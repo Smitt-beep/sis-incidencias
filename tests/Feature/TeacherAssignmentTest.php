@@ -490,7 +490,7 @@ class TeacherAssignmentTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_admin_dashboard_separates_grade_theory_and_workshop_counts(): void
+    public function test_admin_dashboard_shows_stacked_grade_and_course_counts_for_both_periods(): void
     {
         $cursoTeoria = Curso::create(['nombre' => 'Theory Course']);
         $cursoTaller = Curso::create(['nombre' => 'Workshop Course']);
@@ -506,41 +506,109 @@ class TeacherAssignmentTest extends TestCase
             'nombre' => 'Alumno Segundo',
             'seccion_id' => $seccionSegundo->id,
         ]);
-        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Leve']);
+        $gravedades = [
+            'Leve' => \DB::table('gravedades')->insertGetId(['nombre' => 'Leve']),
+            'Intermedia' => \DB::table('gravedades')->insertGetId(['nombre' => 'Intermedia']),
+            'Grave' => \DB::table('gravedades')->insertGetId(['nombre' => 'Grave']),
+        ];
         $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+        $fecha = now();
 
         foreach ([
-            [$estudiantePrimero, $cursoTeoria->id, 'teoria'],
-            [$estudiantePrimero, $cursoTeoria->id, 'teoria'],
-            [$estudianteSegundo, $cursoTaller->id, 'taller'],
-        ] as [$estudianteId, $cursoId, $tipoAula]) {
+            [$estudiantePrimero, $cursoTeoria->id, $gravedades['Leve']],
+            [$estudiantePrimero, $cursoTeoria->id, $gravedades['Grave']],
+            [$estudianteSegundo, $cursoTaller->id, $gravedades['Intermedia']],
+        ] as [$estudianteId, $cursoId, $gravedadId]) {
             \DB::table('incidencias')->insert([
                 'estudiante_id' => $estudianteId,
                 'usuario_id' => 1,
                 'curso_id' => $cursoId,
-                'fecha' => now()->toDateString(),
+                'fecha' => $fecha->toDateString(),
                 'hora' => '08:00:00',
-                'tipo_aula' => $tipoAula,
                 'descripcion' => 'Dashboard test',
                 'gravedad_id' => $gravedadId,
                 'estado_id' => $estadoId,
             ]);
         }
 
+        $indiceDia = $fecha->dayOfWeekIso - 1;
+        $valoresDia = array_fill(0, 7, 0);
+        $valoresDia[$indiceDia] = 3;
+        $valoresGradoPrimeroSemana = array_fill(0, 7, 0);
+        $valoresGradoPrimeroSemana[$indiceDia] = 2;
+        $valoresGradoSegundoSemana = array_fill(0, 7, 0);
+        $valoresGradoSegundoSemana[$indiceDia] = 1;
+        $valoresSemanaCursoTeoria = $valoresGradoPrimeroSemana;
+        $valoresSemanaCursoTaller = $valoresGradoSegundoSemana;
+
+        $cantidadSemanasMes = (int) ceil($fecha->copy()->endOfMonth()->day / 7);
+        $labelsMes = array_map(
+            fn ($numero) => "Semana {$numero}",
+            range(1, $cantidadSemanasMes)
+        );
+        $indiceSemanaMes = intdiv($fecha->day - 1, 7);
+        $valoresMes = array_fill(0, $cantidadSemanasMes, 0);
+        $valoresMes[$indiceSemanaMes] = 3;
+        $valoresGradoPrimeroMes = array_fill(0, $cantidadSemanasMes, 0);
+        $valoresGradoPrimeroMes[$indiceSemanaMes] = 2;
+        $valoresGradoSegundoMes = array_fill(0, $cantidadSemanasMes, 0);
+        $valoresGradoSegundoMes[$indiceSemanaMes] = 1;
+
+        $datosGravedad = [
+            'cantidades' => ['Leve' => 1, 'Intermedia' => 1, 'Grave' => 1],
+            'porcentajes' => ['Leve' => 33.3, 'Intermedia' => 33.3, 'Grave' => 33.3],
+            'total' => 3,
+        ];
+        $datosSemana = [
+            'labels' => ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
+            'valores' => $valoresDia,
+            'porGrado' => [
+                ['grado' => '1ro', 'valores' => $valoresGradoPrimeroSemana],
+                ['grado' => '2do', 'valores' => $valoresGradoSegundoSemana],
+            ],
+            'porCurso' => [
+                ['curso' => 'Theory Course', 'valores' => $valoresSemanaCursoTeoria],
+                ['curso' => 'Workshop Course', 'valores' => $valoresSemanaCursoTaller],
+            ],
+            'gravedad' => $datosGravedad,
+        ];
+        $datosMes = [
+            'labels' => $labelsMes,
+            'valores' => $valoresMes,
+            'porGrado' => [
+                ['grado' => '1ro', 'valores' => $valoresGradoPrimeroMes],
+                ['grado' => '2do', 'valores' => $valoresGradoSegundoMes],
+            ],
+            'porCurso' => [
+                ['curso' => 'Theory Course', 'valores' => $valoresGradoPrimeroMes],
+                ['curso' => 'Workshop Course', 'valores' => $valoresGradoSegundoMes],
+            ],
+            'gravedad' => $datosGravedad,
+        ];
+
         $this->get(route('dashboard'))
             ->assertOk()
             ->assertSee('grafico-admin-grado')
-            ->assertSee('grafico-admin-curso-teoria')
-            ->assertSee('grafico-admin-curso-taller')
+            ->assertSee('grafico-admin-curso')
+            ->assertSee('grafico-admin-gravedad')
+            ->assertSee("type: 'pie'", false)
+            ->assertSee('stacked: true')
             ->assertSee('Theory Course')
             ->assertSee('Workshop Course')
-            ->assertSee('"porGrado":{"labels":["1ro","2do"],"valores":[2,1]}', false)
-            ->assertSee('"porCursoTeoria":{"labels":["Theory Course"],"valores":[2]}', false)
-            ->assertSee('"porCursoTaller":{"labels":["Workshop Course"],"valores":[1]}', false)
-            ->assertSee(
-                '"porGradoApilado":{"labels":["1ro","2do"],"series":{"Leve":[2,1],"Intermedia":[0,0],"Grave":[0,0]}}',
-                false
-            );
+            ->assertSee('"semana":' . json_encode($datosSemana), false)
+            ->assertSee('"mes":' . json_encode($datosMes), false);
+
+        $usuarioId = \DB::table('users')->where('dni', '12345678')->value('id');
+        foreach (['Directora', 'Subdirector'] as $nombreRol) {
+            $rolId = \DB::table('roles')->where('nombre_rol', $nombreRol)->value('id');
+            \DB::table('users')->where('id', $usuarioId)->update(['rol_id' => $rolId]);
+
+            $this->get(route('dashboard'))
+                ->assertOk()
+                ->assertSee('grafico-admin-grado')
+                ->assertSee('grafico-admin-curso')
+                ->assertSee('grafico-admin-gravedad');
+        }
     }
 
     public function test_incidence_search_filters_by_student_name(): void

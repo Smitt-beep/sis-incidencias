@@ -162,9 +162,7 @@
 
             actualizarTotalGravedad('semana');
         </script>
-    @endif
-
-    @if (isset($graficos['tipo']) && $graficos['tipo'] === 'admin')
+    @elseif (isset($graficos['tipo']) && $graficos['tipo'] === 'admin')
         <section class="container mb-4" aria-labelledby="dashboard-admin-title">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
                 <div>
@@ -191,16 +189,8 @@
                 <div class="col-xl-6">
                     <div class="card h-100">
                         <div class="card-body">
-                            <h3 class="h6 text-secondary mb-3">Cursos de teoría</h3>
-                            <canvas id="grafico-admin-curso-teoria" height="220" role="img" aria-label="Cantidad de incidencias por curso de teoría"></canvas>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-xl-6">
-                    <div class="card h-100">
-                        <div class="card-body">
-                            <h3 class="h6 text-secondary mb-3">Cursos de taller</h3>
-                            <canvas id="grafico-admin-curso-taller" height="220" role="img" aria-label="Cantidad de incidencias por curso de taller"></canvas>
+                            <h3 class="h6 text-secondary mb-3">Incidencias por curso</h3>
+                            <canvas id="grafico-admin-curso" height="220" role="img" aria-label="Cantidad de incidencias por curso"></canvas>
                         </div>
                     </div>
                 </div>
@@ -223,44 +213,11 @@
                 Intermedia: '#F5C542',
                 Grave: '#dc3545',
             };
+            const paletaDashboardAdmin = [
+                '#0756A3', '#1689D4', '#48B9E8', '#22A06B', '#8B799B',
+                '#F5C542', '#A6A6A6', '#555555', '#D6D6D6', '#dc3545',
+            ];
             let periodoDashboardAdmin = 'semana';
-
-            const pluginTotalGravedadAdmin = {
-                id: 'totalGravedadAdmin',
-                afterDraw(chart) {
-                    const area = chart.chartArea;
-                    if (!area) {
-                        return;
-                    }
-
-                    const contexto = chart.ctx;
-                    const centroX = (area.left + area.right) / 2;
-                    const centroY = (area.top + area.bottom) / 2;
-                    const radioInterno = chart.getDatasetMeta(0).data[0]?.innerRadius
-                        ?? Math.min(area.width, area.height) * 0.25;
-                    const tamanoNumero = Math.max(14, Math.min(radioInterno * 0.55, area.height * 0.16));
-                    const tamanoEtiqueta = Math.max(10, Math.min(tamanoNumero * 0.35, 14));
-                    const total = datosDashboardAdmin[periodoDashboardAdmin].gravedad.total;
-
-                    contexto.save();
-                    contexto.textAlign = 'center';
-                    contexto.textBaseline = 'middle';
-                    contexto.fillStyle = '#172B4D';
-                    contexto.font = `700 ${tamanoNumero}px sans-serif`;
-                    contexto.fillText(
-                        String(total),
-                        centroX,
-                        centroY - (tamanoNumero + tamanoEtiqueta) / 2
-                    );
-                    contexto.font = `500 ${tamanoEtiqueta}px sans-serif`;
-                    contexto.fillText(
-                        'Total',
-                        centroX,
-                        centroY + (tamanoNumero + tamanoEtiqueta) / 2
-                    );
-                    contexto.restore();
-                },
-            };
 
             function opcionesBarrasAdmin(etiquetaEjeX) {
                 return {
@@ -288,20 +245,14 @@
                 options: opcionesBarrasAdmin('Grados'),
             });
 
-            const graficoAdminCursoTeoria = new Chart(document.getElementById('grafico-admin-curso-teoria'), {
-                type: 'bar',
-                data: { labels: [], datasets: [] },
-                options: opcionesBarrasAdmin('Cursos'),
-            });
-
-            const graficoAdminCursoTaller = new Chart(document.getElementById('grafico-admin-curso-taller'), {
+            const graficoAdminCurso = new Chart(document.getElementById('grafico-admin-curso'), {
                 type: 'bar',
                 data: { labels: [], datasets: [] },
                 options: opcionesBarrasAdmin('Cursos'),
             });
 
             const graficoAdminGravedad = new Chart(document.getElementById('grafico-admin-gravedad'), {
-                type: 'doughnut',
+                type: 'pie',
                 data: {
                     labels: ['Leve', 'Intermedia', 'Grave'],
                     datasets: [{
@@ -311,7 +262,6 @@
                 },
                 options: {
                     responsive: true,
-                    cutout: '68%',
                     plugins: {
                         legend: { position: 'bottom' },
                         tooltip: {
@@ -328,26 +278,24 @@
                         },
                     },
                 },
-                plugins: [pluginTotalGravedadAdmin],
             });
 
             function actualizarGraficosAdmin(periodo) {
                 periodoDashboardAdmin = periodo;
                 const datosPeriodo = datosDashboardAdmin[periodo];
 
-                function actualizarBarras(chart, resumen) {
-                    chart.data.labels = resumen.labels;
-                    chart.data.datasets = Object.entries(resumen.series).map(([gravedad, valores]) => ({
-                        label: gravedad,
-                        data: valores,
-                        backgroundColor: coloresGravedadAdmin[gravedad],
+                function actualizarBarras(chart, series, claveCategoria) {
+                    chart.data.labels = datosPeriodo.labels;
+                    chart.data.datasets = series.map((categoria, indice) => ({
+                        label: categoria[claveCategoria],
+                        data: categoria.valores,
+                        backgroundColor: paletaDashboardAdmin[indice % paletaDashboardAdmin.length],
                     }));
                     chart.update();
                 }
 
-                actualizarBarras(graficoAdminGrado, datosPeriodo.porGradoApilado);
-                actualizarBarras(graficoAdminCursoTeoria, datosPeriodo.porCursoTeoriaApilado);
-                actualizarBarras(graficoAdminCursoTaller, datosPeriodo.porCursoTallerApilado);
+                actualizarBarras(graficoAdminGrado, datosPeriodo.porGrado, 'grado');
+                actualizarBarras(graficoAdminCurso, datosPeriodo.porCurso, 'curso');
 
                 graficoAdminGravedad.data.datasets[0].data = [
                     datosPeriodo.gravedad.cantidades.Leve,
