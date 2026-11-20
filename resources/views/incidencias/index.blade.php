@@ -13,6 +13,9 @@
         @if (in_array(session('usuario_rol'), ['Administrador', 'Profesor'], true))
             <a href="{{ route('incidencias.create') }}" class="btn btn-primary">+ Registrar incidencia</a>
         @endif
+        @if (in_array(session('usuario_rol'), ['Directora', 'Subdirector'], true))
+            <a href="{{ route('incidencias.acta.create') }}" class="btn btn-primary">+ Registrar acta</a>
+        @endif
     </div>
 
     @unless ($esUrgencias ?? false)
@@ -55,6 +58,30 @@
                 </thead>
                 <tbody>
                     @forelse ($incidencias as $incidencia)
+                        @php
+                            $puedeVerActa = in_array(session('usuario_rol'), ['Directora', 'Subdirector'], true);
+                        @endphp
+                        @if ($incidencia->es_reservada && ! $puedeVerActa)
+                            {{-- Acta reservada: solo se muestra alumno, fecha y la etiqueta "Reservado" --}}
+                            <tr>
+                                <td>{{ $incidencia->id }}</td>
+                                <td>{{ $incidencia->estudiante?->nombre ?? '—' }}</td>
+                                <td>—</td>
+                                <td>
+                                    @if ($incidencia->estudiante?->seccion)
+                                        {{ $incidencia->estudiante->seccion->grado }} - {{ $incidencia->estudiante->seccion->seccion }}
+                                    @else
+                                        —
+                                    @endif
+                                </td>
+                                <td>{{ \Carbon\Carbon::parse($incidencia->fecha)->format('d/m/Y') }}</td>
+                                <td>—</td>
+                                <td><span class="badge text-bg-secondary">Reservado</span></td>
+                                <td><span class="badge text-bg-secondary">Reservado</span></td>
+                                <td></td>
+                            </tr>
+                            @continue
+                        @endif
                         <tr>
                             <td>{{ $incidencia->id }}</td>
                             <td>{{ $incidencia->estudiante?->nombre ?? '—' }}</td>
@@ -83,6 +110,9 @@
                             <td>
                                 <div class="d-flex flex-wrap justify-content-end gap-2">
                                     <a href="{{ route('incidencias.show', $incidencia) }}" class="btn btn-sm btn-outline-secondary">Ver</a>
+                                    @if ($incidencia->es_reservada && in_array(session('usuario_rol'), ['Directora', 'Subdirector'], true))
+                                        <a href="{{ route('incidencias.acta.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar acta</a>
+                                    @endif
                                     @if (session('usuario_rol') === 'Administrador'
                                         || (session('usuario_rol') === 'Profesor' && (int) $incidencia->usuario_id === (int) session('usuario_id')))
                                         <a href="{{ route('incidencias.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar</a>

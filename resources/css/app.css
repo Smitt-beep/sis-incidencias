@@ -643,3 +643,287 @@ body.panel-body {
         transition: none;
     }
 }
+/* ==========================================================================
+   Tema oscuro del panel (barra superior, menú lateral y fondo)
+   Las tarjetas, tablas y formularios se mantienen blancos.
+   Para volver al diseño claro, basta con borrar este bloque.
+   ========================================================================== */
+
+body.panel-body {
+    background:
+        radial-gradient(circle at 8% 0%, rgba(22, 137, 212, 0.28), transparent 34%),
+        radial-gradient(circle at 100% 100%, rgba(72, 185, 232, 0.16), transparent 38%),
+        linear-gradient(160deg, #0b1d3a 0%, #0a1830 55%, #07122a 100%) !important;
+    background-attachment: fixed !important;
+    color: #e6eefc;
+}
+
+/* Barra superior */
+.panel-navbar {
+    background-color: rgba(8, 20, 42, 0.92);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(10px);
+}
+
+.panel-navbar .navbar-brand {
+    letter-spacing: 0.01em;
+}
+
+.panel-navbar .btn-outline-light {
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+.panel-navbar .btn-outline-light:hover {
+    background-color: var(--color-secondary);
+    border-color: var(--color-secondary);
+    color: var(--color-white);
+}
+
+/* Menú lateral */
+.panel-sidebar,
+.panel-sidebar.bg-white {
+    background-color: rgba(8, 20, 42, 0.78) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+    color: #c7d6f0;
+}
+
+.panel-sidebar .offcanvas-title {
+    color: var(--color-white);
+}
+
+.panel-sidebar .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+.panel-sidebar .text-secondary {
+    color: #7f93b8 !important;
+}
+
+.panel-sidebar .nav-link {
+    color: #c7d6f0 !important;
+}
+
+.panel-sidebar .nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--color-white) !important;
+}
+
+.panel-sidebar .nav-link.active {
+    background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)) !important;
+    color: var(--color-white) !important;
+    box-shadow: 0 6px 16px rgba(22, 137, 212, 0.35);
+}
+
+.panel-sidebar .nav-link.disabled {
+    color: #6f84aa !important;
+}
+
+/* Contenido: lo que está fuera de las tarjetas va en claro */
+.panel-main {
+    color: #e6eefc;
+}
+
+.panel-main h1,
+.panel-main h2,
+.panel-main h3,
+.panel-main h4,
+.panel-main h5,
+.panel-main h6 {
+    color: var(--color-white);
+}
+
+.panel-main .text-secondary,
+.panel-main .text-muted {
+    color: #9db2d8 !important;
+}
+
+.panel-main .form-label {
+    color: #dbe7fb;
+}
+
+.panel-main a:not(.btn):not(.page-link) {
+    color: #7dd3fc;
+}
+
+.panel-main .btn-outline-primary {
+    --bs-btn-color: #7dd3fc;
+    --bs-btn-border-color: rgba(125, 211, 252, 0.55);
+    border-color: rgba(125, 211, 252, 0.55);
+    color: #7dd3fc;
+}
+
+.panel-main .btn-outline-primary:hover {
+    background-color: var(--color-secondary);
+    border-color: var(--color-secondary);
+    color: var(--color-white);
+}
+
+.panel-main .card {
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+}
+
+.panel-main .card:hover {
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.4);
+}
+
+/* Dentro de las tarjetas todo vuelve a los colores de siempre */
+.panel-main .card {
+    color: var(--color-text);
+}
+
+.panel-main .card h1,
+.panel-main .card h2,
+.panel-main .card h3,
+.panel-main .card h4,
+.panel-main .card h5,
+.panel-main .card h6 {
+    color: var(--color-text);
+}
+
+.panel-main .card .text-secondary,
+.panel-main .card .text-muted {
+    color: var(--color-muted) !important;
+}
+
+.panel-main .card .form-label {
+    color: var(--color-text);
+}
+
+.panel-main .card a:not(.btn):not(.page-link) {
+    color: var(--color-primary);
+}
+
+.panel-main .card .btn-outline-primary {
+    --bs-btn-color: var(--color-primary);
+    --bs-btn-border-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.panel-main .card .btn-outline-primary:hover {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-white);
+}
+
+/* Franja de color a la izquierda de las tarjetas de resumen del dashboard
+   (la regla general de .card usa border !important y la tapaba) */
+.panel-main .card.border-start.border-4 {
+    border-left-width: 4px !important;
+    border-left-style: solid !important;
+}
+
+.panel-main .card.border-start.border-primary { border-left-color: var(--color-primary) !important; }
+.panel-main .card.border-start.border-success { border-left-color: var(--color-success) !important; }
+.panel-main .card.border-start.border-warning { border-left-color: var(--color-accent) !important; }
+.panel-main .card.border-start.border-danger  { border-left-color: var(--color-error) !important; }
+
+/* Botón activo de los selectores (Semana / Mes) con el azul del sistema */
+.panel-main .btn-check:checked + .btn-outline-primary {
+    background-color: var(--color-secondary);
+    border-color: var(--color-secondary);
+    color: var(--color-white);
+}
+/* Tono de las tarjetas: azul suave en lugar de blanco puro.
+   Para probar otro tono, cambia solo el valor: #F3F6F9 (gris) o #D6E2F2 (azul medio). */
+.panel-main {
+    --color-card: #E6EDF7;
+}
+/* Las tablas dentro de las tarjetas toman el color de la tarjeta (antes Bootstrap las pintaba de blanco) */
+.panel-main .table {
+    --bs-table-bg: transparent;
+    --bs-table-hover-bg: rgba(22, 137, 212, 0.10);
+    --bs-table-hover-color: var(--color-text);
+    --bs-table-border-color: rgba(23, 43, 77, 0.12);
+    border-color: rgba(23, 43, 77, 0.12);
+}
+
+.panel-main .table tbody td {
+    border-color: rgba(23, 43, 77, 0.12);
+}
+
+.panel-main .table tbody tr:hover > * {
+    background-color: rgba(22, 137, 212, 0.10);
+}
+/* ==========================================================================
+   TungaBot llamativo (botón flotante y cabecera del chat)
+   Para volver al diseño anterior, basta con borrar este bloque.
+   ========================================================================== */
+
+.chatbot-toggle {
+    border: 1px solid rgba(125, 211, 252, 0.5);
+    background: linear-gradient(160deg, rgba(22, 137, 212, 0.38), rgba(8, 20, 42, 0.94));
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 0 22px rgba(72, 185, 232, 0.35);
+    color: var(--color-white);
+    animation: chatbot-pulse 2.8s ease-out infinite;
+    transition: box-shadow 160ms ease, transform 160ms ease;
+}
+
+.chatbot-toggle:hover {
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.5), 0 0 30px rgba(72, 185, 232, 0.55);
+    transform: translateY(-3px) scale(1.04);
+}
+
+.chatbot-toggle-image {
+    animation: chatbot-float 3.2s ease-in-out infinite;
+    filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35));
+}
+
+.chatbot-toggle-label {
+    padding: 0.12rem 0.7rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+    color: var(--color-white);
+    letter-spacing: 0.02em;
+}
+
+/* Cuando el chat está abierto, el botón se calma */
+.chatbot-toggle[aria-expanded="true"] {
+    animation: none;
+}
+
+.chatbot-toggle[aria-expanded="true"] .chatbot-toggle-image {
+    animation: none;
+}
+
+@keyframes chatbot-pulse {
+    0% {
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 0 22px rgba(72, 185, 232, 0.35), 0 0 0 0 rgba(72, 185, 232, 0.55);
+    }
+    70% {
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 0 22px rgba(72, 185, 232, 0.35), 0 0 0 18px rgba(72, 185, 232, 0);
+    }
+    100% {
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 0 22px rgba(72, 185, 232, 0.35), 0 0 0 0 rgba(72, 185, 232, 0);
+    }
+}
+
+@keyframes chatbot-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
+
+/* Quien tiene activada la opción de menos movimiento no ve animaciones */
+@media (prefers-reduced-motion: reduce) {
+    .chatbot-toggle,
+    .chatbot-toggle-image {
+        animation: none;
+    }
+}
+
+/* Chat abierto: cabecera en degradado oscuro, igual que el panel */
+.chatbot-panel {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
+}
+
+.chatbot-header {
+    background: linear-gradient(90deg, #0a1830, var(--color-primary));
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chatbot-avatar {
+    box-shadow: 0 0 0 2px rgba(72, 185, 232, 0.7);
+}

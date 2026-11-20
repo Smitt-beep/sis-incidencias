@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Incidencia extends Model
@@ -26,6 +27,11 @@ class Incidencia extends Model
         'descripcion',
         'gravedad_id',
         'estado_id',
+        'es_reservada',
+    ];
+
+    protected $casts = [
+        'es_reservada' => 'boolean',
     ];
 
     public function estudiante(): BelongsTo
@@ -36,6 +42,14 @@ class Incidencia extends Model
     public function usuario(): BelongsTo
     {
         return $this->belongsTo(User::class, 'usuario_id', 'id');
+    }
+
+    /**
+     * Datos del acta (formato de la directora). Solo existe si es_reservada = true.
+     */
+    public function acta(): HasOne
+    {
+        return $this->hasOne(ActaIncidencia::class, 'incidencia_id');
     }
 
     public function eliminadoPor(): BelongsTo

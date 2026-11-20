@@ -10,6 +10,7 @@ use App\Models\Seccion;
 use App\Models\Gravedad;
 use App\Models\Estado;
 use App\Models\TipoIncidencia;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Request;
@@ -21,12 +22,240 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
+use Illuminate\Support\Arr;
 use RuntimeException;
 use Throwable;
 use Closure;
 
 class IncidenciaController extends Controller
 {
+    public function createActa(Request $request)
+    {
+        $user = $this->sessionUser($request);
+        Gate::forUser($user)->authorize('createActa', Incidencia::class);
+
+        $secciones = Seccion::query()->orderBy('grado')->orderBy('seccion')->get();
+        $estudiantes = Estudiante::with('seccion')->orderBy('nombre')->limit(50)->get();
+
+        return view('incidencias.acta-create', compact('secciones', 'estudiantes'));
+    }
+
+    public function editActa(Request $request, Incidencia $incidencia)
+    {
+        $this->authorizeIncidencia($request, $incidencia, 'update');
+        abort_unless($incidencia->es_reservada, 404);
+        $incidencia->load(['estudiante.seccion', 'acta.agresores']);
+        abort_unless($incidencia->acta, 404);
+
+        $secciones = Seccion::query()->orderBy('grado')->orderBy('seccion')->get();
+        $estudiantes = Estudiante::with('seccion')->orderBy('nombre')->limit(50)->get();
+        if (!$estudiantes->contains('id', $incidencia->estudiante_id)) {
+            $estudiantes->prepend($incidencia->estudiante);
+        }
+
+        return view('incidencias.acta-create', compact('incidencia', 'secciones', 'estudiantes'));
+    }
+
+    public function buscarEstudiantesActa(Request $request)
+    {
+        $user = $this->sessionUser($request);
+        Gate::forUser($user)->authorize('createActa', Incidencia::class);
+
+        $buscar = trim((string) $request->input('buscar', ''));
+        $seccionId = $request->input('seccion_id');
+        $query = Estudiante::with('seccion')->orderBy('nombre');
+
+        if (is_numeric($seccionId)) {
+            $query->where('seccion_id', (int) $seccionId);
+        }
+        if ($buscar !== '') {
+            $operator = DB::connection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
+            $query->where(function (Builder $q) use ($buscar, $operator) {
+                $q->where('nombre', $operator, '%'.$buscar.'%')
+                    ->orWhere('dni', $operator, '%'.$buscar.'%');
+            });
+        }
+
+        return response()->json([
+            'estudiantes' => $query->limit(30)->get()->map(fn (Estudiante $estudiante) => [
+                'id' => $estudiante->id,
+                'nombre' => $estudiante->nombre,
+                'dni' => $estudiante->dni,
+                'seccion_id' => $estudiante->seccion_id,
+                'grado' => $estudiante->seccion?->grado,
+                'seccion' => $estudiante->seccion?->seccion,
+            ]),
+        ]);
+    }
+
+    public function storeActa(Request $request)
+    {
+        $user = $this->sessionUser($request);
+        Gate::forUser($user)->authorize('createActa', Incidencia::class);
+
+        $datos = $this->validatedActaData($request);
+        $fechaHora = now();
+
+        $incidencia = DB::transaction(function () use ($datos, $fechaHora, $user) {
+            $gravedad = Gravedad::whereRaw('LOWER(nombre) = ?', ['grave'])->first();
+            $estado = Estado::whereRaw('LOWER(nombre) = ?', ['pendiente'])->first();
+            if (!$gravedad || !$estado) {
+                throw ValidationException::withMessages([
+                    'base' => 'Debe existir gravedad Grave y estado Pendiente para registrar el acta.',
+                ]);
+            }
+
+            $incidencia = Incidencia::create([
+                'estudiante_id' => $datos['estudiante_id'],
+                'usuario_id' => $user->getKey(),
+                'curso_id' => null,
+                'fecha' => $fechaHora->toDateString(),
+                'hora' => $fechaHora->format('H:i:s'),
+                'tipo_aula' => null,
+                'descripcion' => null,
+                'gravedad_id' => $gravedad->id,
+                'estado_id' => $estado->id,
+                'es_reservada' => true,
+            ]);
+
+            $acta = $incidencia->acta()->create($this->actaAttributes($datos));
+
+            foreach ($datos['agresores'] ?? [] as $agresor) {
+                $atributosAgresor = $this->agresorAttributes($agresor);
+                if ($atributosAgresor !== null) {
+                    $acta->agresores()->create($atributosAgresor);
+                }
+            }
+
+            return $incidencia;
+        });
+
+        return redirect()->route('incidencias.show', $incidencia)
+            ->with('success', 'Acta de incidencia registrada correctamente.');
+    }
+
+    public function updateActa(Request $request, Incidencia $incidencia)
+    {
+        $this->authorizeIncidencia($request, $incidencia, 'update');
+        abort_unless($incidencia->es_reservada, 404);
+        $datos = $this->validatedActaData($request);
+
+        DB::transaction(function () use ($incidencia, $datos): void {
+            $incidenciaBloqueada = Incidencia::query()
+                ->whereKey($incidencia->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            abort_unless($incidenciaBloqueada->es_reservada, 404);
+            $acta = $incidenciaBloqueada->acta()->lockForUpdate()->firstOrFail();
+
+            $incidenciaBloqueada->update(['estudiante_id' => $datos['estudiante_id']]);
+            $acta->update($this->actaAttributes($datos));
+            $acta->agresores()->delete();
+
+            foreach ($datos['agresores'] ?? [] as $agresor) {
+                $atributosAgresor = $this->agresorAttributes($agresor);
+                if ($atributosAgresor !== null) {
+                    $acta->agresores()->create($atributosAgresor);
+                }
+            }
+        });
+
+        return redirect()->route('incidencias.show', $incidencia)
+            ->with('success', 'Acta de incidencia actualizada correctamente.');
+    }
+
+    private function validatedActaData(Request $request): array
+    {
+        $reglas = [
+            'estudiante_id' => ['required', 'integer', 'exists:estudiantes,id'],
+            'ie' => ['nullable', 'string', 'max:255'],
+            'dre' => ['nullable', 'string', 'max:255'],
+            'ugel' => ['nullable', 'string', 'max:255'],
+            'sisve_fecha' => ['nullable', 'date'],
+            'sisve_nro_reporte' => ['nullable', 'string', 'max:50'],
+            'tipo_reporte' => ['nullable', 'in:A,B,C,D'],
+            'informante_nombres' => ['nullable', 'string', 'max:255'],
+            'informante_parentesco' => ['nullable', 'string', 'max:30'],
+            'informante_parentesco_otro' => ['nullable', 'string', 'max:255'],
+            'informante_dni' => ['nullable', 'string', 'max:20'],
+            'informante_domicilio' => ['nullable', 'string', 'max:255'],
+            'informante_telefono' => ['nullable', 'string', 'max:30'],
+            'informante_correo' => ['nullable', 'email', 'max:255'],
+            'agredido_nombres_iniciales' => ['nullable', 'string', 'max:255'],
+            'agredido_edad' => ['nullable', 'integer', 'between:1,99'],
+            'agredido_sexo' => ['nullable', 'in:M,F'],
+            'agredido_turno' => ['nullable', 'in:M,T,N'],
+            'agredido_telefono' => ['nullable', 'string', 'max:30'],
+            'agredido_discapacidad' => ['nullable', 'boolean'],
+            'agredido_discapacidad_detalle' => ['nullable', 'string', 'max:255'],
+            'tipos_violencia' => ['nullable', 'array'],
+            'tipos_violencia.*' => ['in:fisico,sexual,verbal,bullying,ciberbullying,otro'],
+            'violencia_otro' => ['nullable', 'string', 'max:255'],
+            'agresores' => ['nullable', 'array', 'max:4'],
+            'agresores.*.tipo' => ['required', 'in:estudiante,adulto'],
+            'agresores.*.nombres' => ['nullable', 'string', 'max:255'],
+            'agresores.*.edad' => ['nullable', 'integer', 'between:1,99'],
+            'agresores.*.sexo' => ['nullable', 'in:M,F'],
+            'agresores.*.dni' => ['nullable', 'string', 'max:20'],
+            'agresores.*.relacion_grado' => ['nullable', 'in:mismo_grado,mayor,menor'],
+            'agresores.*.grado_seccion' => ['nullable', 'string', 'max:30'],
+            'agresores.*.turno' => ['nullable', 'in:M,T,N'],
+            'agresores.*.cargo' => ['nullable', 'in:director,docente,administrativo,personal_apoyo,otro'],
+            'agresores.*.cargo_otro' => ['nullable', 'string', 'max:255'],
+        ];
+        if (in_array('sexual', (array) $request->input('tipos_violencia', []), true)) {
+            $reglas['agredido_nombres_iniciales'] = [
+                'required',
+                'string',
+                'max:255',
+                'regex:/^\\p{L}\\.?(?:[\\s.]+\\p{L}\\.?)*$/u',
+            ];
+        }
+
+        $datos = $request->validate($reglas, [
+            'agredido_nombres_iniciales.required' => 'Indique las iniciales de la persona agredida en casos de violencia sexual.',
+            'agredido_nombres_iniciales.regex' => 'En casos de violencia sexual, registre solo iniciales (por ejemplo: A. B.).',
+        ]);
+        array_walk_recursive($datos, static function (&$value): void {
+            if ($value === '') {
+                $value = null;
+            }
+        });
+
+        return $datos;
+    }
+
+    private function actaAttributes(array $datos): array
+    {
+        return Arr::only($datos, [
+            'ie', 'dre', 'ugel', 'sisve_fecha', 'sisve_nro_reporte', 'tipo_reporte',
+            'informante_nombres', 'informante_parentesco', 'informante_parentesco_otro',
+            'informante_dni', 'informante_domicilio', 'informante_telefono', 'informante_correo',
+            'agredido_nombres_iniciales', 'agredido_edad', 'agredido_sexo', 'agredido_turno',
+            'agredido_telefono', 'agredido_discapacidad', 'agredido_discapacidad_detalle',
+            'tipos_violencia', 'violencia_otro',
+        ]);
+    }
+
+    private function agresorAttributes(array $agresor): ?array
+    {
+        $hasData = collect($agresor)
+            ->except(['tipo'])
+            ->contains(fn ($value) => $value !== null && $value !== '');
+
+        return $hasData ? $agresor : null;
+    }
+
+    public function pdfActa(Request $request, Incidencia $incidencia)
+    {
+        $this->authorizeIncidencia($request, $incidencia, 'imprimirActa');
+        $incidencia->load(['estudiante.seccion', 'usuario', 'acta.agresores']);
+
+        return Pdf::loadView('incidencias.acta-pdf', compact('incidencia'))
+            ->setPaper('a4', 'portrait')
+            ->download('acta-incidencia-'.$incidencia->id.'.pdf');
+    }
+
     public function index(Request $request)
     {
         $user = $this->sessionUser($request);
@@ -34,7 +263,16 @@ class IncidenciaController extends Controller
 
         $query = $this->incidenciasQuery();
         if ($user->rol?->nombre_rol === 'Profesor') {
-            $query->where('usuario_id', $user->getKey());
+            // Sus propias incidencias + las actas reservadas de alumnos de sus secciones
+            // (estas últimas se muestran solo con la etiqueta "Reservado").
+            $seccionesAsignadas = $user->asignacionesDocentes()->pluck('seccion_id');
+            $query->where(function (Builder $q) use ($user, $seccionesAsignadas) {
+                $q->where('usuario_id', $user->getKey())
+                    ->orWhere(function (Builder $reservadas) use ($seccionesAsignadas) {
+                        $reservadas->where('es_reservada', true)
+                            ->whereHas('estudiante', fn (Builder $e) => $e->whereIn('seccion_id', $seccionesAsignadas));
+                    });
+            });
         }
 
         $buscar = trim((string) $request->input('buscar', ''));

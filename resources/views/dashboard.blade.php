@@ -29,7 +29,7 @@
                 </div>
             </div>
         </div>
-
+        @include('partials.tarjetas-resumen')  
         @if ($graficos && ($graficos['tipo'] ?? null) !== 'admin')
             <div class="row mt-4">
                 <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -178,19 +178,34 @@
             </div>
 
             <div class="row g-3">
-                <div class="col-xl-6">
+                <div class="col-12">
                     <div class="card h-100">
                         <div class="card-body">
-                            <h3 class="h6 text-secondary mb-3">Incidencias por grado</h3>
-                            <canvas id="grafico-admin-grado" height="220" role="img" aria-label="Cantidad de incidencias por grado"></canvas>
+                            <h3 class="h6 text-secondary mb-3">Incidencias Generales</h3>
+                            <canvas id="grafico-admin-general" height="120" role="img" aria-label="Total de incidencias por semana o mes"></canvas>
                         </div>
                     </div>
                 </div>
                 <div class="col-xl-6">
                     <div class="card h-100">
                         <div class="card-body">
-                            <h3 class="h6 text-secondary mb-3">Incidencias por curso</h3>
-                            <canvas id="grafico-admin-curso" height="220" role="img" aria-label="Cantidad de incidencias por curso"></canvas>
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                                <h3 class="h6 text-secondary mb-0">Incidencias por curso</h3>
+                                <div class="d-flex align-items-center gap-2">
+                                    <label for="grado-admin-curso" class="small text-secondary mb-0">Grado</label>
+                                    <select id="grado-admin-curso" class="form-select form-select-sm" aria-label="Seleccionar grado">
+                                        <option value="0">Primer grado</option>
+                                        <option value="1">Segundo grado</option>
+                                        <option value="2">Tercer grado</option>
+                                        <option value="3">Cuarto grado</option>
+                                        <option value="4">Quinto grado</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="grafico-admin-curso-contenedor" style="height: 280px;">
+                                <canvas id="grafico-admin-curso" role="img" aria-label="Cantidad de incidencias por curso y grado seleccionado"></canvas>
+                            </div>
+                            <p id="grafico-admin-curso-vacio" class="text-muted small mb-0 d-none" role="status"></p>
                         </div>
                     </div>
                 </div>
@@ -213,42 +228,79 @@
                 Intermedia: '#F5C542',
                 Grave: '#dc3545',
             };
-            const paletaDashboardAdmin = [
-                '#0756A3', '#1689D4', '#48B9E8', '#22A06B', '#8B799B',
-                '#F5C542', '#A6A6A6', '#555555', '#D6D6D6', '#dc3545',
-            ];
             let periodoDashboardAdmin = 'semana';
+            let gradoDashboardAdmin = 0;
 
-            function opcionesBarrasAdmin(etiquetaEjeX) {
-                return {
+            const graficoAdminCurso = new Chart(document.getElementById('grafico-admin-curso'), {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Incidencias',
+                        data: [],
+                        backgroundColor: '#1689D4',
+                        borderRadius: 4,
+                    }],
+                },
+                options: {
                     responsive: true,
-                    plugins: { legend: { display: true, position: 'bottom' } },
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (contexto) => `Incidencias: ${contexto.parsed.x}`,
+                            },
+                        },
+                    },
                     scales: {
                         x: {
-                            stacked: true,
-                            grid: { display: false },
-                            title: { display: true, text: etiquetaEjeX },
-                        },
-                        y: {
-                            stacked: true,
                             beginAtZero: true,
                             ticks: { precision: 0 },
                             title: { display: true, text: 'Incidencias' },
                         },
+                        y: {
+                            grid: { display: false },
+                            title: { display: true, text: 'Cursos' },
+                        },
                     },
-                };
-            }
-
-            const graficoAdminGrado = new Chart(document.getElementById('grafico-admin-grado'), {
-                type: 'bar',
-                data: { labels: [], datasets: [] },
-                options: opcionesBarrasAdmin('Grados'),
+                },
             });
+            const contenedorGraficoAdminCurso = document.getElementById('grafico-admin-curso-contenedor');
+            const mensajeGraficoAdminCursoVacio = document.getElementById('grafico-admin-curso-vacio');
+            const nombresGradosDashboardAdmin = [
+                'Primer grado', 'Segundo grado', 'Tercer grado', 'Cuarto grado', 'Quinto grado',
+            ];
 
-            const graficoAdminCurso = new Chart(document.getElementById('grafico-admin-curso'), {
-                type: 'bar',
-                data: { labels: [], datasets: [] },
-                options: opcionesBarrasAdmin('Cursos'),
+            const graficoAdminGeneral = new Chart(document.getElementById('grafico-admin-general'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Incidencias',
+                        data: [],
+                        borderColor: '#7C3AED',
+                        backgroundColor: 'rgba(124, 58, 237, 0.18)',
+                        fill: true,
+                        tension: 0.3,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            title: { display: true, text: 'Periodo' },
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { precision: 0 },
+                            title: { display: true, text: 'Cantidad de incidencias' },
+                        },
+                    },
+                },
             });
 
             const graficoAdminGravedad = new Chart(document.getElementById('grafico-admin-gravedad'), {
@@ -280,22 +332,42 @@
                 },
             });
 
+            function actualizarGraficoAdminCurso(datosPeriodo) {
+                const cursos = datosPeriodo.porCursoPorGrado[gradoDashboardAdmin]
+                    .map((curso) => ({
+                        nombre: curso.curso,
+                        cantidad: curso.valores.reduce((total, valor) => total + valor, 0),
+                    }))
+                    .sort((a, b) => b.cantidad - a.cantidad || a.nombre.localeCompare(b.nombre, 'es'));
+
+                if (cursos.length === 0) {
+                    contenedorGraficoAdminCurso.classList.add('d-none');
+                    mensajeGraficoAdminCursoVacio.textContent =
+                        `No hay incidencias para ${nombresGradosDashboardAdmin[gradoDashboardAdmin]} en este periodo.`;
+                    mensajeGraficoAdminCursoVacio.classList.remove('d-none');
+                    graficoAdminCurso.data.labels = [];
+                    graficoAdminCurso.data.datasets[0].data = [];
+                    graficoAdminCurso.update();
+                    return;
+                }
+
+                mensajeGraficoAdminCursoVacio.classList.add('d-none');
+                contenedorGraficoAdminCurso.classList.remove('d-none');
+                contenedorGraficoAdminCurso.style.height = `${Math.max(240, cursos.length * 38 + 40)}px`;
+                graficoAdminCurso.data.labels = cursos.map((curso) => curso.nombre);
+                graficoAdminCurso.data.datasets[0].data = cursos.map((curso) => curso.cantidad);
+                graficoAdminCurso.update();
+            }
+
             function actualizarGraficosAdmin(periodo) {
                 periodoDashboardAdmin = periodo;
                 const datosPeriodo = datosDashboardAdmin[periodo];
 
-                function actualizarBarras(chart, series, claveCategoria) {
-                    chart.data.labels = datosPeriodo.labels;
-                    chart.data.datasets = series.map((categoria, indice) => ({
-                        label: categoria[claveCategoria],
-                        data: categoria.valores,
-                        backgroundColor: paletaDashboardAdmin[indice % paletaDashboardAdmin.length],
-                    }));
-                    chart.update();
-                }
+                graficoAdminGeneral.data.labels = datosPeriodo.general.labels;
+                graficoAdminGeneral.data.datasets[0].data = datosPeriodo.general.valores;
+                graficoAdminGeneral.update();
 
-                actualizarBarras(graficoAdminGrado, datosPeriodo.porGrado, 'grado');
-                actualizarBarras(graficoAdminCurso, datosPeriodo.porCurso, 'curso');
+                actualizarGraficoAdminCurso(datosPeriodo);
 
                 graficoAdminGravedad.data.datasets[0].data = [
                     datosPeriodo.gravedad.cantidades.Leve,
@@ -310,11 +382,153 @@
                 graficoAdminGravedad.update();
             }
 
+            document.getElementById('grado-admin-curso').addEventListener('change', (evento) => {
+                gradoDashboardAdmin = Number(evento.target.value);
+                actualizarGraficoAdminCurso(datosDashboardAdmin[periodoDashboardAdmin]);
+            });
+
             document.querySelectorAll('input[name="periodo-dashboard-admin"]').forEach((input) => {
                 input.addEventListener('change', (evento) => actualizarGraficosAdmin(evento.target.value));
             });
 
             actualizarGraficosAdmin('semana');
+        </script>
+    @endif
+
+    @if ($graficos)
+        <section class="container mb-4" aria-labelledby="dashboard-grados-title">
+            <h2 class="h4 mb-3" id="dashboard-grados-title">Incidencias por grado</h2>
+            <div class="row g-3">
+                @foreach (['Primer grado', 'Segundo grado', 'Tercer grado', 'Cuarto grado', 'Quinto grado'] as $indice => $grado)
+                    <div class="col-6 col-md-4 col-xl">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h3 class="h6 text-center mb-2">{{ $grado }}</h3>
+                                <canvas
+                                    id="grafico-gravedad-grado-{{ $indice + 1 }}"
+                                    height="170"
+                                    role="img"
+                                    aria-label="Incidencias por gravedad de {{ $grado }}"
+                                ></canvas>
+                            </div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </section>
+
+        <script>
+            const datosDashboardGrados = @json($graficos);
+            const etiquetasGravedadDashboard = ['Leve', 'Intermedia', 'Grave'];
+            const coloresGravedadDashboard = ['#0756A3', '#F5C542', '#dc3545'];
+            let periodoDashboardGrados = 'semana';
+
+            function pluginTotalGrado(indiceGrado) {
+                return {
+                    id: `totalGrado${indiceGrado}`,
+                    afterDraw(chart) {
+                        const area = chart.chartArea;
+                        if (!area) {
+                            return;
+                        }
+
+                        const total = datosDashboardGrados[periodoDashboardGrados]
+                            .gravedadPorGrado[indiceGrado].total;
+                        const contexto = chart.ctx;
+                        const centroX = (area.left + area.right) / 2;
+                        const centroY = (area.top + area.bottom) / 2;
+                        const radioInterno = chart.getDatasetMeta(0).data[0]?.innerRadius
+                            ?? Math.min(area.width, area.height) * 0.25;
+                        const tamanoNumero = Math.max(12, Math.min(radioInterno * 0.42, 18));
+                        const tamanoEtiqueta = Math.max(9, Math.min(tamanoNumero * 0.55, 11));
+
+                        contexto.save();
+                        contexto.textAlign = 'center';
+                        contexto.textBaseline = 'middle';
+                        contexto.fillStyle = '#172B4D';
+                        contexto.font = `700 ${tamanoNumero}px sans-serif`;
+                        contexto.fillText(
+                            String(total),
+                            centroX,
+                            centroY - (tamanoNumero + tamanoEtiqueta) / 2
+                        );
+                        contexto.font = `500 ${tamanoEtiqueta}px sans-serif`;
+                        contexto.fillText(
+                            'Total',
+                            centroX,
+                            centroY + (tamanoNumero + tamanoEtiqueta) / 2
+                        );
+                        contexto.restore();
+                    },
+                };
+            }
+
+            const graficosGravedadPorGrado = [0, 1, 2, 3, 4].map((indiceGrado) => {
+                const resumen = datosDashboardGrados.semana.gravedadPorGrado[indiceGrado];
+
+                return new Chart(
+                    document.getElementById(`grafico-gravedad-grado-${indiceGrado + 1}`),
+                    {
+                        type: 'doughnut',
+                        data: {
+                            labels: etiquetasGravedadDashboard,
+                            datasets: [{
+                                data: etiquetasGravedadDashboard.map((gravedad) =>
+                                    resumen.cantidades[gravedad]
+                                ),
+                                backgroundColor: coloresGravedadDashboard,
+                            }],
+                        },
+                        options: {
+                            responsive: true,
+                            cutout: '62%',
+                            plugins: {
+                                legend: { position: 'bottom', labels: { boxWidth: 10, padding: 8 } },
+                                tooltip: {
+                                    callbacks: {
+                                        label: (contexto) => {
+                                            const resumenActual = datosDashboardGrados[periodoDashboardGrados]
+                                                .gravedadPorGrado[indiceGrado];
+                                            const gravedad = contexto.label;
+                                            const cantidad = contexto.parsed;
+                                            const porcentaje = resumenActual.porcentajes[gravedad];
+
+                                            return `${gravedad}: ${cantidad} (${porcentaje}%)`;
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        plugins: [pluginTotalGrado(indiceGrado)],
+                    }
+                );
+            });
+
+            function actualizarGraficosGravedadPorGrado(periodo) {
+                periodoDashboardGrados = periodo;
+
+                graficosGravedadPorGrado.forEach((grafico, indiceGrado) => {
+                    const resumen = datosDashboardGrados[periodo].gravedadPorGrado[indiceGrado];
+                    grafico.data.datasets[0].data = etiquetasGravedadDashboard.map((gravedad) =>
+                        resumen.cantidades[gravedad]
+                    );
+                    grafico.update();
+                });
+            }
+
+            const nombreSelectorDashboard = document.querySelector(
+                'input[name="periodo-dashboard-admin"]'
+            ) ? 'periodo-dashboard-admin' : 'periodo-dashboard';
+
+            document.querySelectorAll(`input[name="${nombreSelectorDashboard}"]`).forEach((input) => {
+                input.addEventListener('change', (evento) =>
+                    actualizarGraficosGravedadPorGrado(evento.target.value)
+                );
+            });
+
+            actualizarGraficosGravedadPorGrado(
+                document.querySelector(`input[name="${nombreSelectorDashboard}"]:checked`).value
+            );
         </script>
     @endif
 @endsection

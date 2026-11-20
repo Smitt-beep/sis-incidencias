@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ChatbotMensaje;
 use App\Models\User;
 use App\Services\AIService;
+use App\Services\ChatbotContextoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -16,10 +17,12 @@ use Throwable;
 class ChatbotMensajeController extends Controller
 {
     protected AIService $aiService;
+    protected ChatbotContextoService $chatbotContextoService;
 
-    public function __construct(AIService $aiService)
+    public function __construct(AIService $aiService, ChatbotContextoService $chatbotContextoService)
     {
         $this->aiService = $aiService;
+        $this->chatbotContextoService = $chatbotContextoService;
     }
 
     public function store(Request $request): JsonResponse
@@ -78,15 +81,16 @@ class ChatbotMensajeController extends Controller
         }
 
         try {
-            $systemContext = "Eres TungaBot, un asistente virtual experto en el sistema de incidencias de la Institución Educativa. Ayuda a reportar, consultar o guiar sobre convivencia escolar de forma clara y profesional.";
-            
-            // Generar una clave única basada en el texto de la pregunta normalizado (minúsculas)
-            $preguntaKey = 'chatbot_q_' . md5(mb_strtolower($contenidoUsuario));
+                        // El contexto incluye datos reales del sistema, filtrados según el rol del usuario
+            $systemContext = $this->chatbotContextoService->construirPrompt($user, $contenidoUsuario);
 
-            // Consultar la caché; si no existe, invocar al servicio de IA y guardarlo automáticamente por 24 horas
-            $respuestaAI = Cache::rememberForever($preguntaKey, function () use ($systemContext, $contenidoUsuario) {
-    return $this->aiService->sendMessage($systemContext, $contenidoUsuario);
-});
+            // La caché es POR USUARIO y depende de los datos: así una respuesta con datos de un usuario
+            // nunca se le entrega a otro, y se renueva cuando los datos cambian (máx. 5 minutos).
+            $preguntaKey = 'chatbot_q_' . $user->getKey() . '_' . md5(mb_strtolower($contenidoUsuario) . '|' . md5($systemContext));
+
+            $respuestaAI = Cache::remember($preguntaKey, now()->addMinutes(5), function () use ($systemContext, $contenidoUsuario) {
+                return $this->aiService->sendMessage($systemContext, $contenidoUsuario);
+            });
 
             $result = DB::transaction(function () use ($user, $conversation, $contenidoUsuario, $respuestaAI): array {
                 if (! $conversation) {

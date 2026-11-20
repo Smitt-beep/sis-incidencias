@@ -108,7 +108,71 @@ class AuthController extends Controller
             $graficos = $this->datosDashboardAdmin();
         }
 
-        return view('dashboard', compact('graficos'));
+             // Tarjetas de resumen (números): las ven todos los roles con dashboard
+        $tarjetas = in_array($usuario->rol?->nombre_rol, ['Profesor', 'Administrador', 'Directora', 'Subdirector'], true)
+            ? $this->tarjetasResumen($usuario)
+            : null;
+
+        return view('dashboard', compact('graficos', 'tarjetas'));
+    }
+
+    /**
+     * Números de las 4 tarjetas de resumen del dashboard.
+     * - Profesor: solo cuenta las incidencias que él registró.
+     * - Administrador, Directora y Subdirector: cuentan todas las incidencias
+     *   (las actas reservadas suman como una más, solo como número).
+     * Las incidencias eliminadas no se cuentan (SoftDeletes).
+     */
+    private function tarjetasResumen(User $usuario): array
+    {
+        $esProfesor = $usuario->rol?->nombre_rol === 'Profesor';
+
+        // Consulta base según el rol
+        $base = fn () => Incidencia::query()
+            ->when($esProfesor, fn ($consulta) => $consulta->where('usuario_id', $usuario->getKey()));
+
+        // Filtra por nombre de estado (sin importar mayúsculas)
+        $conEstado = fn ($consulta, array $estados) => $consulta->whereHas(
+            'estado',
+            fn ($q) => $q->whereRaw('LOWER(nombre) IN (' . implode(',', array_fill(0, count($estados), '?')) . ')', $estados)
+        );
+
+        $total = $base()->count();
+        $finalizadas = $conEstado($base(), ['finalizado'])->count();
+        $pendientes = $conEstado($base(), ['pendiente'])->count();
+        $enProceso = $conEstado($base(), ['en proceso'])->count();
+
+        // Graves activas = las mismas que se consideran urgencias (Grave + Pendiente/En Proceso)
+        $gravesActivas = $conEstado($base(), ['pendiente', 'en proceso'])
+            ->whereHas('gravedad', fn ($q) => $q->whereRaw('LOWER(nombre) = ?', ['grave']))
+            ->count();
+
+        // Mes actual contra mes anterior (por la fecha de la incidencia)
+        $hoy = Carbon::now();
+        $mesAnterior = $hoy->copy()->subMonthNoOverflow();
+
+        $mesActualCantidad = $base()
+            ->whereBetween('fecha', [$hoy->copy()->startOfMonth()->toDateString(), $hoy->copy()->endOfMonth()->toDateString()])
+            ->count();
+        $mesAnteriorCantidad = $base()
+            ->whereBetween('fecha', [$mesAnterior->copy()->startOfMonth()->toDateString(), $mesAnterior->copy()->endOfMonth()->toDateString()])
+            ->count();
+
+        return [
+            'alcance' => $esProfesor ? 'propias' : 'todas',
+            'total' => $total,
+            'mes_actual' => $mesActualCantidad,
+            // null cuando el mes anterior no tiene incidencias (no se puede calcular el %)
+            'variacion_mes' => $mesAnteriorCantidad > 0
+                ? (int) round(($mesActualCantidad - $mesAnteriorCantidad) / $mesAnteriorCantidad * 100)
+                : null,
+            'finalizadas' => $finalizadas,
+            'porcentaje_finalizadas' => $total > 0 ? round($finalizadas / $total * 100, 1) : 0,
+            'abiertas' => $pendientes + $enProceso,
+            'pendientes' => $pendientes,
+            'en_proceso' => $enProceso,
+            'graves_activas' => $gravesActivas,
+        ];
     }
 
     /**
@@ -120,55 +184,61 @@ class AuthController extends Controller
     {
         $hoy = Carbon::now();
 
-        // --- Semana actual: lunes a domingo ---
-        $inicioSemana = $hoy->copy()->startOfWeek(Carbon::MONDAY);
-        $finSemana = $hoy->copy()->endOfWeek(Carbon::SUNDAY);
-
-        $incidenciasSemana = Incidencia::with('gravedad:id,nombre')
-            ->where('usuario_id', $usuario->getKey())
-            ->whereBetween('fecha', [$inicioSemana->toDateString(), $finSemana->toDateString()])
-            ->get(['id', 'fecha', 'gravedad_id']);
-
-        $diasSemana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-        $valoresSemana = array_fill(0, 7, 0);
-
-        foreach ($incidenciasSemana as $incidencia) {
-            $indiceDia = Carbon::parse($incidencia->fecha)->dayOfWeekIso - 1; // 0 = Lunes
-            $valoresSemana[$indiceDia]++;
-        }
-
-        // --- Mes actual, dividido en semanas de 7 días (Semana 1, 2, 3...) ---
+        // --- Mes actual, dividido en cuatro semanas ---
         $inicioMes = $hoy->copy()->startOfMonth();
         $finMes = $hoy->copy()->endOfMonth();
 
-        $incidenciasMes = Incidencia::with('gravedad:id,nombre')
+        $incidenciasSemana = Incidencia::with([
+            'gravedad:id,nombre',
+            'estudiante.seccion:id,grado',
+        ])
             ->where('usuario_id', $usuario->getKey())
             ->whereBetween('fecha', [$inicioMes->toDateString(), $finMes->toDateString()])
-            ->get(['id', 'fecha', 'gravedad_id']);
+            ->get(['id', 'fecha', 'gravedad_id', 'estudiante_id']);
 
-        $totalSemanasMes = (int) ceil($finMes->day / 7);
-        $labelsMes = [];
-        for ($i = 1; $i <= $totalSemanasMes; $i++) {
-            $labelsMes[] = "Semana {$i}";
+        $labelsSemana = ['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4'];
+        $valoresSemana = array_fill(0, count($labelsSemana), 0);
+
+        foreach ($incidenciasSemana as $incidencia) {
+            $indiceSemana = min(intdiv(Carbon::parse($incidencia->fecha)->day - 1, 7), 3);
+            $valoresSemana[$indiceSemana]++;
         }
-        $valoresMes = array_fill(0, $totalSemanasMes, 0);
 
-        foreach ($incidenciasMes as $incidencia) {
-            $diaDelMes = Carbon::parse($incidencia->fecha)->day;
-            $indiceSemana = (int) ceil($diaDelMes / 7) - 1;
-            $valoresMes[$indiceSemana]++;
+        // --- Año actual, agrupado por mes ---
+        $inicioAnio = $hoy->copy()->startOfYear();
+        $finAnio = $hoy->copy()->endOfYear();
+
+        $incidenciasAnio = Incidencia::with([
+            'gravedad:id,nombre',
+            'estudiante.seccion:id,grado',
+        ])
+            ->where('usuario_id', $usuario->getKey())
+            ->whereBetween('fecha', [$inicioAnio->toDateString(), $finAnio->toDateString()])
+            ->get(['id', 'fecha', 'gravedad_id', 'estudiante_id']);
+
+        $labelsMes = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+        ];
+        $valoresMes = array_fill(0, count($labelsMes), 0);
+
+        foreach ($incidenciasAnio as $incidencia) {
+            $indiceMes = Carbon::parse($incidencia->fecha)->month - 1;
+            $valoresMes[$indiceMes]++;
         }
 
         return [
             'semana' => [
-                'labels' => $diasSemana,
+                'labels' => $labelsSemana,
                 'valores' => $valoresSemana,
                 'gravedad' => $this->conteoPorGravedad($incidenciasSemana),
+                'gravedadPorGrado' => $this->conteoGravedadPorGrado($incidenciasSemana),
             ],
             'mes' => [
                 'labels' => $labelsMes,
                 'valores' => $valoresMes,
-                'gravedad' => $this->conteoPorGravedad($incidenciasMes),
+                'gravedad' => $this->conteoPorGravedad($incidenciasAnio),
+                'gravedadPorGrado' => $this->conteoGravedadPorGrado($incidenciasAnio),
             ],
         ];
     }
@@ -208,20 +278,12 @@ class AuthController extends Controller
     {
         $hoy = Carbon::now();
 
-        $inicioSemana = $hoy->copy()->startOfWeek(Carbon::MONDAY);
-        $finSemana = $hoy->copy()->endOfWeek(Carbon::SUNDAY);
         $inicioMes = $hoy->copy()->startOfMonth();
         $finMes = $hoy->copy()->endOfMonth();
+        $inicioAnio = $hoy->copy()->startOfYear();
+        $finAnio = $hoy->copy()->endOfYear();
 
         $incSemana = Incidencia::with([
-            'gravedad:id,nombre',
-            'curso:id,nombre',
-            'estudiante.seccion:id,grado',
-        ])
-            ->whereBetween('fecha', [$inicioSemana->toDateString(), $finSemana->toDateString()])
-            ->get(['id', 'fecha', 'gravedad_id', 'curso_id', 'estudiante_id']);
-
-        $incMes = Incidencia::with([
             'gravedad:id,nombre',
             'curso:id,nombre',
             'estudiante.seccion:id,grado',
@@ -229,25 +291,44 @@ class AuthController extends Controller
             ->whereBetween('fecha', [$inicioMes->toDateString(), $finMes->toDateString()])
             ->get(['id', 'fecha', 'gravedad_id', 'curso_id', 'estudiante_id']);
 
-        $diasSemana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-        $cantidadSemanasMes = (int) ceil($finMes->day / 7);
-        $semanasMes = array_map(
-            fn ($numero) => "Semana {$numero}",
-            range(1, $cantidadSemanasMes)
+        $incAnio = Incidencia::with([
+            'gravedad:id,nombre',
+            'curso:id,nombre',
+            'estudiante.seccion:id,grado',
+        ])
+            ->whereBetween('fecha', [$inicioAnio->toDateString(), $finAnio->toDateString()])
+            ->get(['id', 'fecha', 'gravedad_id', 'curso_id', 'estudiante_id']);
+
+        $labelsSemana = ['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4'];
+        $labelsMes = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+        ];
+
+        $resumenSemana = $this->resumenPeriodoDashboardAdmin(
+            $incSemana,
+            $labelsSemana,
+            fn ($incidencia) => min(intdiv(Carbon::parse($incidencia->fecha)->day - 1, 7), 3)
         );
+        $resumenMes = $this->resumenPeriodoDashboardAdmin(
+            $incAnio,
+            $labelsMes,
+            fn ($incidencia) => Carbon::parse($incidencia->fecha)->month - 1
+        );
+
+        $resumenSemana['general'] = [
+            'labels' => $labelsSemana,
+            'valores' => $resumenSemana['valores'],
+        ];
+        $resumenMes['general'] = [
+            'labels' => $labelsMes,
+            'valores' => $resumenMes['valores'],
+        ];
 
         return [
             'tipo' => 'admin',
-            'semana' => $this->resumenPeriodoDashboardAdmin(
-                $incSemana,
-                $diasSemana,
-                fn ($incidencia) => Carbon::parse($incidencia->fecha)->dayOfWeekIso - 1
-            ),
-            'mes' => $this->resumenPeriodoDashboardAdmin(
-                $incMes,
-                $semanasMes,
-                fn ($incidencia) => intdiv(Carbon::parse($incidencia->fecha)->day - 1, 7)
-            ),
+            'semana' => $resumenSemana,
+            'mes' => $resumenMes,
         ];
     }
 
@@ -260,6 +341,7 @@ class AuthController extends Controller
         $valores = array_fill(0, count($labels), 0);
         $porGrado = [];
         $porCurso = [];
+        $porCursoPorGrado = array_fill(0, 5, []);
 
         foreach ($incidencias as $incidencia) {
             $indice = $indicePeriodo($incidencia);
@@ -280,10 +362,20 @@ class AuthController extends Controller
                 $porCurso[$curso] ??= array_fill(0, count($labels), 0);
                 $porCurso[$curso][$indice]++;
             }
+
+            $indiceGrado = $this->indiceGradoDashboard($grado);
+            if ($indiceGrado !== null && $curso !== null) {
+                $porCursoPorGrado[$indiceGrado][$curso] ??= array_fill(0, count($labels), 0);
+                $porCursoPorGrado[$indiceGrado][$curso][$indice]++;
+            }
         }
 
         ksort($porGrado, SORT_NATURAL);
         ksort($porCurso, SORT_NATURAL | SORT_FLAG_CASE);
+        foreach ($porCursoPorGrado as &$cursos) {
+            ksort($cursos, SORT_NATURAL | SORT_FLAG_CASE);
+        }
+        unset($cursos);
 
         return [
             'labels' => $labels,
@@ -298,7 +390,97 @@ class AuthController extends Controller
                 array_keys($porCurso),
                 array_values($porCurso)
             ),
+            'porCursoPorGrado' => array_map(
+                fn ($cursos) => array_map(
+                    fn ($curso, $conteos) => ['curso' => $curso, 'valores' => $conteos],
+                    array_keys($cursos),
+                    array_values($cursos)
+                ),
+                $porCursoPorGrado
+            ),
             'gravedad' => $this->conteoPorGravedad($incidencias),
+            'gravedadPorGrado' => $this->conteoGravedadPorGrado($incidencias),
         ];
     }
+
+    private function conteoGravedadPorGrado(Collection $incidencias): array
+    {
+        $nombresGrados = [
+            'Primer grado',
+            'Segundo grado',
+            'Tercer grado',
+            'Cuarto grado',
+            'Quinto grado',
+        ];
+        $gravedades = ['Leve', 'Intermedia', 'Grave'];
+        $conteos = array_fill(
+            0,
+            count($nombresGrados),
+            array_fill_keys($gravedades, 0)
+        );
+
+        foreach ($incidencias as $incidencia) {
+            $indiceGrado = $this->indiceGradoDashboard(
+                $incidencia->estudiante?->seccion?->grado
+            );
+            $nombreGravedad = $incidencia->gravedad?->nombre;
+
+            if ($indiceGrado !== null && isset($conteos[$indiceGrado][$nombreGravedad])) {
+                $conteos[$indiceGrado][$nombreGravedad]++;
+            }
+        }
+
+        $resumen = [];
+        foreach ($nombresGrados as $indice => $nombreGrado) {
+            $total = array_sum($conteos[$indice]);
+            $porcentajes = [];
+
+            foreach ($gravedades as $nombreGravedad) {
+                $cantidad = $conteos[$indice][$nombreGravedad];
+                $porcentajes[$nombreGravedad] = $total > 0
+                    ? round($cantidad / $total * 100, 1)
+                    : 0;
+            }
+
+            $resumen[] = [
+                'grado' => $nombreGrado,
+                'cantidades' => $conteos[$indice],
+                'porcentajes' => $porcentajes,
+                'total' => $total,
+            ];
+        }
+
+        return $resumen;
+    }
+
+    private function indiceGradoDashboard(?string $grado): ?int
+    {
+        if ($grado === null) {
+            return null;
+        }
+
+        if (preg_match('/(?<!\d)([1-5])(?!\d)/u', $grado, $coincidencia) === 1) {
+            return (int) $coincidencia[1] - 1;
+        }
+
+        $gradoNormalizado = mb_strtolower($grado);
+        $ordinales = [
+            ['primer', 'primero', 'primera'],
+            ['segundo', 'segunda'],
+            ['tercer', 'tercero', 'tercera'],
+            ['cuarto', 'cuarta'],
+            ['quinto', 'quinta'],
+        ];
+
+        foreach ($ordinales as $indice => $variantes) {
+            foreach ($variantes as $variante) {
+                if (str_contains($gradoNormalizado, $variante)) {
+                    return $indice;
+                }
+            }
+        }
+
+        return null;
+    }
+
 }

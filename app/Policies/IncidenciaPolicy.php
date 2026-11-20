@@ -19,6 +19,11 @@ class IncidenciaPolicy
 
     public function view(User $user, Incidencia $incidencia): bool
     {
+        // Las actas reservadas solo las ve la dirección (no profesores ni administrador).
+        if ($incidencia->es_reservada) {
+            return $this->puedeGestionarActa($user);
+        }
+
         return in_array($user->rol?->nombre_rol, [
             'Administrador',
             'Directora',
@@ -31,15 +36,41 @@ class IncidenciaPolicy
         return in_array($user->rol?->nombre_rol, ['Administrador', 'Profesor'], true);
     }
 
+    public function createActa(User $user): bool
+    {
+        return $this->puedeGestionarActa($user);
+    }
+
     public function update(User $user, Incidencia $incidencia): bool
     {
+        if ($incidencia->es_reservada) {
+            return $this->puedeGestionarActa($user);
+        }
+
         return $user->rol?->nombre_rol === 'Administrador'
             || $this->isOwnerProfessor($user, $incidencia);
     }
 
     public function delete(User $user, Incidencia $incidencia): bool
     {
+        if ($incidencia->es_reservada) {
+            return $user->rol?->nombre_rol === 'Directora';
+        }
+
         return in_array($user->rol?->nombre_rol, ['Administrador', 'Directora'], true);
+    }
+
+    /**
+     * Imprimir / descargar el acta: solo Directora y Subdirector, y solo si es reservada.
+     */
+    public function imprimirActa(User $user, Incidencia $incidencia): bool
+    {
+        return $incidencia->es_reservada && $this->puedeGestionarActa($user);
+    }
+
+    private function puedeGestionarActa(User $user): bool
+    {
+        return in_array($user->rol?->nombre_rol, ['Directora', 'Subdirector'], true);
     }
 
     private function isOwnerProfessor(User $user, Incidencia $incidencia): bool

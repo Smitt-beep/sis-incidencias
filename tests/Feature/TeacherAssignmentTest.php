@@ -77,13 +77,14 @@ class TeacherAssignmentTest extends TestCase
             $table->id();
             $table->foreignId('estudiante_id');
             $table->foreignId('usuario_id');
-            $table->foreignId('curso_id');
+            $table->foreignId('curso_id')->nullable();
             $table->date('fecha');
             $table->time('hora')->nullable();
             $table->string('tipo_aula')->nullable();
-            $table->text('descripcion');
+            $table->text('descripcion')->nullable();
             $table->foreignId('gravedad_id');
             $table->foreignId('estado_id');
+            $table->boolean('es_reservada')->default(false);
             $table->softDeletes();
         });
 
@@ -490,7 +491,7 @@ class TeacherAssignmentTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_admin_dashboard_shows_stacked_grade_and_course_counts_for_both_periods(): void
+    public function test_admin_dashboard_shows_grade_course_and_gravity_counts_for_both_periods(): void
     {
         $cursoTeoria = Curso::create(['nombre' => 'Theory Course']);
         $cursoTaller = Curso::create(['nombre' => 'Workshop Course']);
@@ -531,37 +532,83 @@ class TeacherAssignmentTest extends TestCase
             ]);
         }
 
-        $indiceDia = $fecha->dayOfWeekIso - 1;
-        $valoresDia = array_fill(0, 7, 0);
-        $valoresDia[$indiceDia] = 3;
-        $valoresGradoPrimeroSemana = array_fill(0, 7, 0);
-        $valoresGradoPrimeroSemana[$indiceDia] = 2;
-        $valoresGradoSegundoSemana = array_fill(0, 7, 0);
-        $valoresGradoSegundoSemana[$indiceDia] = 1;
+        $indiceSemana = min(intdiv($fecha->day - 1, 7), 3);
+        $labelsSemana = ['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4'];
+        $valoresSemana = array_fill(0, count($labelsSemana), 0);
+        $valoresSemana[$indiceSemana] = 3;
+        $valoresGradoPrimeroSemana = array_fill(0, count($labelsSemana), 0);
+        $valoresGradoPrimeroSemana[$indiceSemana] = 2;
+        $valoresGradoSegundoSemana = array_fill(0, count($labelsSemana), 0);
+        $valoresGradoSegundoSemana[$indiceSemana] = 1;
         $valoresSemanaCursoTeoria = $valoresGradoPrimeroSemana;
         $valoresSemanaCursoTaller = $valoresGradoSegundoSemana;
+        $cursosPorGradoSemana = [
+            [['curso' => 'Theory Course', 'valores' => $valoresSemanaCursoTeoria]],
+            [['curso' => 'Workshop Course', 'valores' => $valoresSemanaCursoTaller]],
+            [],
+            [],
+            [],
+        ];
 
-        $cantidadSemanasMes = (int) ceil($fecha->copy()->endOfMonth()->day / 7);
-        $labelsMes = array_map(
-            fn ($numero) => "Semana {$numero}",
-            range(1, $cantidadSemanasMes)
-        );
-        $indiceSemanaMes = intdiv($fecha->day - 1, 7);
-        $valoresMes = array_fill(0, $cantidadSemanasMes, 0);
-        $valoresMes[$indiceSemanaMes] = 3;
-        $valoresGradoPrimeroMes = array_fill(0, $cantidadSemanasMes, 0);
-        $valoresGradoPrimeroMes[$indiceSemanaMes] = 2;
-        $valoresGradoSegundoMes = array_fill(0, $cantidadSemanasMes, 0);
-        $valoresGradoSegundoMes[$indiceSemanaMes] = 1;
+        $labelsMes = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+        ];
+        $indiceMes = $fecha->month - 1;
+        $valoresMes = array_fill(0, count($labelsMes), 0);
+        $valoresMes[$indiceMes] = 3;
+        $valoresGradoPrimeroMes = array_fill(0, count($labelsMes), 0);
+        $valoresGradoPrimeroMes[$indiceMes] = 2;
+        $valoresGradoSegundoMes = array_fill(0, count($labelsMes), 0);
+        $valoresGradoSegundoMes[$indiceMes] = 1;
+        $cursosPorGradoMes = [
+            [['curso' => 'Theory Course', 'valores' => $valoresGradoPrimeroMes]],
+            [['curso' => 'Workshop Course', 'valores' => $valoresGradoSegundoMes]],
+            [],
+            [],
+            [],
+        ];
 
         $datosGravedad = [
             'cantidades' => ['Leve' => 1, 'Intermedia' => 1, 'Grave' => 1],
             'porcentajes' => ['Leve' => 33.3, 'Intermedia' => 33.3, 'Grave' => 33.3],
             'total' => 3,
         ];
+        $datosGravedadPorGrado = [
+            [
+                'grado' => 'Primer grado',
+                'cantidades' => ['Leve' => 1, 'Intermedia' => 0, 'Grave' => 1],
+                'porcentajes' => ['Leve' => 50, 'Intermedia' => 0, 'Grave' => 50],
+                'total' => 2,
+            ],
+            [
+                'grado' => 'Segundo grado',
+                'cantidades' => ['Leve' => 0, 'Intermedia' => 1, 'Grave' => 0],
+                'porcentajes' => ['Leve' => 0, 'Intermedia' => 100, 'Grave' => 0],
+                'total' => 1,
+            ],
+            [
+                'grado' => 'Tercer grado',
+                'cantidades' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'porcentajes' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'total' => 0,
+            ],
+            [
+                'grado' => 'Cuarto grado',
+                'cantidades' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'porcentajes' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'total' => 0,
+            ],
+            [
+                'grado' => 'Quinto grado',
+                'cantidades' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'porcentajes' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'total' => 0,
+            ],
+        ];
         $datosSemana = [
-            'labels' => ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
-            'valores' => $valoresDia,
+            'labels' => $labelsSemana,
+            'valores' => $valoresSemana,
             'porGrado' => [
                 ['grado' => '1ro', 'valores' => $valoresGradoPrimeroSemana],
                 ['grado' => '2do', 'valores' => $valoresGradoSegundoSemana],
@@ -570,7 +617,13 @@ class TeacherAssignmentTest extends TestCase
                 ['curso' => 'Theory Course', 'valores' => $valoresSemanaCursoTeoria],
                 ['curso' => 'Workshop Course', 'valores' => $valoresSemanaCursoTaller],
             ],
+            'porCursoPorGrado' => $cursosPorGradoSemana,
             'gravedad' => $datosGravedad,
+            'gravedadPorGrado' => $datosGravedadPorGrado,
+            'general' => [
+                'labels' => $labelsSemana,
+                'valores' => $valoresSemana,
+            ],
         ];
         $datosMes = [
             'labels' => $labelsMes,
@@ -583,16 +636,34 @@ class TeacherAssignmentTest extends TestCase
                 ['curso' => 'Theory Course', 'valores' => $valoresGradoPrimeroMes],
                 ['curso' => 'Workshop Course', 'valores' => $valoresGradoSegundoMes],
             ],
+            'porCursoPorGrado' => $cursosPorGradoMes,
             'gravedad' => $datosGravedad,
+            'gravedadPorGrado' => $datosGravedadPorGrado,
+            'general' => [
+                'labels' => $labelsMes,
+                'valores' => $valoresMes,
+            ],
         ];
 
         $this->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('grafico-admin-grado')
+            ->assertSee('grafico-admin-general')
+            ->assertSee('grafico-gravedad-grado-1')
+            ->assertSee('grafico-gravedad-grado-2')
+            ->assertSee('grafico-gravedad-grado-3')
+            ->assertSee('grafico-gravedad-grado-4')
+            ->assertSee('grafico-gravedad-grado-5')
             ->assertSee('grafico-admin-curso')
+            ->assertSee('grado-admin-curso')
             ->assertSee('grafico-admin-gravedad')
+            ->assertSee("type: 'line'", false)
+            ->assertSee('#7C3AED')
+            ->assertSee("type: 'doughnut'", false)
+            ->assertSee('#0756A3')
+            ->assertSee('#F5C542')
+            ->assertSee('#dc3545')
             ->assertSee("type: 'pie'", false)
-            ->assertSee('stacked: true')
+            ->assertSee("indexAxis: 'y'", false)
             ->assertSee('Theory Course')
             ->assertSee('Workshop Course')
             ->assertSee('"semana":' . json_encode($datosSemana), false)
@@ -605,10 +676,101 @@ class TeacherAssignmentTest extends TestCase
 
             $this->get(route('dashboard'))
                 ->assertOk()
-                ->assertSee('grafico-admin-grado')
+                ->assertSee('grafico-gravedad-grado-1')
+                ->assertSee('grafico-gravedad-grado-5')
                 ->assertSee('grafico-admin-curso')
                 ->assertSee('grafico-admin-gravedad');
         }
+    }
+
+    public function test_professor_dashboard_uses_four_weeks_and_twelve_months_for_own_incidences(): void
+    {
+        $curso = Curso::create(['nombre' => 'Curso del profesor']);
+        $seccion = Seccion::create(['grado' => '1ro', 'seccion' => 'A']);
+        $estudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '33333333',
+            'nombre' => 'Alumno Dashboard',
+            'seccion_id' => $seccion->id,
+        ]);
+        $profesor = User::create([
+            'name' => 'Profesor Dashboard',
+            'email' => 'profesor.dashboard@example.test',
+            'dni' => '33334444',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Leve']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+        $fecha = now();
+
+        foreach ([$profesor->id, 1] as $usuarioId) {
+            \DB::table('incidencias')->insert([
+                'estudiante_id' => $estudianteId,
+                'usuario_id' => $usuarioId,
+                'curso_id' => $curso->id,
+                'fecha' => $fecha->toDateString(),
+                'hora' => '08:00:00',
+                'descripcion' => 'Dashboard profesor test',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+            ]);
+        }
+
+        $labelsSemana = ['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4'];
+        $valoresSemana = array_fill(0, 4, 0);
+        $valoresSemana[min(intdiv($fecha->day - 1, 7), 3)] = 1;
+        $labelsMes = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+        ];
+        $valoresMes = array_fill(0, 12, 0);
+        $valoresMes[$fecha->month - 1] = 1;
+        $gravedadPorGradoProfesor = [
+            [
+                'grado' => 'Primer grado',
+                'cantidades' => ['Leve' => 1, 'Intermedia' => 0, 'Grave' => 0],
+                'porcentajes' => ['Leve' => 100, 'Intermedia' => 0, 'Grave' => 0],
+                'total' => 1,
+            ],
+            [
+                'grado' => 'Segundo grado',
+                'cantidades' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'porcentajes' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'total' => 0,
+            ],
+            [
+                'grado' => 'Tercer grado',
+                'cantidades' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'porcentajes' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'total' => 0,
+            ],
+            [
+                'grado' => 'Cuarto grado',
+                'cantidades' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'porcentajes' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'total' => 0,
+            ],
+            [
+                'grado' => 'Quinto grado',
+                'cantidades' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'porcentajes' => ['Leve' => 0, 'Intermedia' => 0, 'Grave' => 0],
+                'total' => 0,
+            ],
+        ];
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('grafico-gravedad-grado-1')
+            ->assertSee('grafico-gravedad-grado-5')
+            ->assertSee('"gravedadPorGrado":' . json_encode($gravedadPorGradoProfesor), false)
+            ->assertSee('"semana":{"labels":' . json_encode($labelsSemana) . ',"valores":' . json_encode($valoresSemana), false)
+            ->assertSee('"mes":{"labels":' . json_encode($labelsMes) . ',"valores":' . json_encode($valoresMes), false)
+            ->assertDontSee('"labels":["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]', false);
     }
 
     public function test_incidence_search_filters_by_student_name(): void
@@ -647,6 +809,308 @@ class TeacherAssignmentTest extends TestCase
             ->assertDontSee('Luis Pérez')
             ->assertSee('name="buscar"', false)
             ->assertSee('Limpiar');
+    }
+
+    public function test_director_and_subdirector_can_browse_students_and_report_only_non_reserved_incidents(): void
+    {
+        $seccion = Seccion::create(['grado' => '3.º', 'seccion' => 'A']);
+        $estudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '11112222',
+            'nombre' => 'Estudiante Dirección',
+            'seccion_id' => $seccion->id,
+        ]);
+        $curso = Curso::create(['nombre' => 'Comunicación']);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Leve']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+        $idsNormales = [];
+
+        foreach ([
+            ['descripcion' => 'Reporte visible uno', 'es_reservada' => false],
+            ['descripcion' => 'Reporte visible dos', 'es_reservada' => false],
+            ['descripcion' => 'Contenido reservado', 'es_reservada' => true],
+        ] as $reporte) {
+            $id = \DB::table('incidencias')->insertGetId([
+                'estudiante_id' => $estudianteId,
+                'usuario_id' => 1,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '08:00:00',
+                'descripcion' => $reporte['descripcion'],
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => $reporte['es_reservada'],
+            ]);
+            if (!$reporte['es_reservada']) {
+                $idsNormales[] = $id;
+            }
+        }
+
+        $directora = User::create([
+            'name' => 'Directora',
+            'email' => 'directora@example.test',
+            'dni' => '87654320',
+            'password' => 'clave-segura',
+            'rol_id' => Rol::where('nombre_rol', 'Directora')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $subdirector = User::create([
+            'name' => 'Subdirector',
+            'email' => 'subdirector@example.test',
+            'dni' => '87654319',
+            'password' => 'clave-segura',
+            'rol_id' => Rol::where('nombre_rol', 'Subdirector')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ]);
+        $this->get(route('estudiantes.index', [
+            'buscar' => 'Estudiante Dirección',
+            'seccion_id' => $seccion->id,
+        ]))->assertOk()
+            ->assertSee('Estudiante Dirección')
+            ->assertSee('Reportes')
+            ->assertDontSee('Añadir alumno');
+
+        $this->get(route('estudiantes.reporte.seleccionar', $estudianteId))
+            ->assertOk()
+            ->assertSee('Reporte visible uno')
+            ->assertSee('Reporte visible dos')
+            ->assertDontSee('Contenido reservado');
+
+        $this->post(route('estudiantes.reporte.pdf.post', $estudianteId), [
+            'incidencia_ids' => [$idsNormales[0]],
+        ])->assertDownload('reporte-11112222.pdf');
+        $this->post(route('estudiantes.reporte.pdf.post', $estudianteId), [
+            'incidencia_ids' => $idsNormales,
+        ])->assertDownload('reporte-11112222.pdf');
+        $this->get(route('estudiantes.reporte.pdf', $estudianteId))
+            ->assertDownload('reporte-11112222.pdf');
+
+        for ($i = 0; $i < 26; $i++) {
+            \DB::table('estudiantes')->insert([
+                'dni' => str_pad((string) (30000000 + $i), 8, '0', STR_PAD_LEFT),
+                'nombre' => 'Alumno adicional '.$i,
+                'seccion_id' => $seccion->id,
+            ]);
+        }
+
+        $this->withSession([
+            'usuario_id' => $subdirector->id,
+            'usuario_rol' => 'Subdirector',
+        ]);
+        $this->get(route('estudiantes.index'))
+            ->assertOk()
+            ->assertSee('page=2', false);
+        $this->get(route('estudiantes.index', ['page' => 2]))
+            ->assertOk()
+            ->assertSee('Estudiante Dirección');
+        $this->withSession([
+            'usuario_id' => 1,
+            'usuario_rol' => 'Administrador',
+        ])->get(route('estudiantes.index'))
+            ->assertForbidden();
+    }
+
+    public function test_reserved_acta_pdf_is_downloadable_only_by_school_leadership(): void
+    {
+        Schema::create('actas_incidencia', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('incidencia_id')->unique();
+            $table->string('ie')->nullable();
+            $table->string('dre')->nullable();
+            $table->string('ugel')->nullable();
+            $table->date('sisve_fecha')->nullable();
+            $table->string('sisve_nro_reporte', 50)->nullable();
+            $table->string('tipo_reporte', 1)->nullable();
+            $table->string('informante_nombres')->nullable();
+            $table->string('informante_parentesco', 30)->nullable();
+            $table->string('informante_parentesco_otro')->nullable();
+            $table->string('informante_dni', 20)->nullable();
+            $table->string('informante_domicilio')->nullable();
+            $table->string('informante_telefono', 30)->nullable();
+            $table->string('informante_correo')->nullable();
+            $table->string('agredido_nombres_iniciales')->nullable();
+            $table->unsignedSmallInteger('agredido_edad')->nullable();
+            $table->string('agredido_sexo', 1)->nullable();
+            $table->string('agredido_turno', 1)->nullable();
+            $table->string('agredido_telefono', 30)->nullable();
+            $table->boolean('agredido_discapacidad')->nullable();
+            $table->string('agredido_discapacidad_detalle')->nullable();
+            $table->json('tipos_violencia')->nullable();
+            $table->string('violencia_otro')->nullable();
+            $table->timestamps();
+        });
+        Schema::create('acta_agresores', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('acta_incidencia_id');
+            $table->string('tipo', 10);
+            $table->string('nombres')->nullable();
+            $table->unsignedSmallInteger('edad')->nullable();
+            $table->string('sexo', 1)->nullable();
+            $table->string('dni', 20)->nullable();
+            $table->string('relacion_grado', 20)->nullable();
+            $table->string('grado_seccion', 30)->nullable();
+            $table->string('turno', 1)->nullable();
+            $table->string('cargo', 30)->nullable();
+            $table->string('cargo_otro')->nullable();
+            $table->timestamps();
+        });
+
+        $curso = Curso::create(['nombre' => 'Comunicación']);
+        $seccion = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
+        $estudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '11112222',
+            'nombre' => 'Estudiante Reservado',
+            'seccion_id' => $seccion->id,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Grave']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+        $incidenciaId = \DB::table('incidencias')->insertGetId([
+            'estudiante_id' => $estudianteId,
+            'usuario_id' => 1,
+            'curso_id' => $curso->id,
+            'fecha' => now()->toDateString(),
+            'hora' => '08:00:00',
+            'descripcion' => 'Registro reservado',
+            'gravedad_id' => $gravedadId,
+            'estado_id' => $estadoId,
+            'es_reservada' => true,
+        ]);
+        $actaId = \DB::table('actas_incidencia')->insertGetId([
+            'incidencia_id' => $incidenciaId,
+            'ie' => 'I.E. Tungasuca',
+            'tipo_reporte' => 'B',
+            'informante_nombres' => 'Persona informante',
+            'agredido_nombres_iniciales' => 'E.R.',
+            'tipos_violencia' => json_encode(['fisico']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        \DB::table('acta_agresores')->insert([
+            'acta_incidencia_id' => $actaId,
+            'tipo' => 'estudiante',
+            'nombres' => 'Presunto agresor',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $directora = User::create([
+            'name' => 'Directora',
+            'email' => 'directora-pdf@example.test',
+            'dni' => '87654320',
+            'password' => 'clave-segura',
+            'rol_id' => Rol::where('nombre_rol', 'Directora')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->get(route('incidencias.acta.create'))
+            ->assertOk()
+            ->assertSee('Registrar Acta de Incidencia');
+        $this->get(route('incidencias.acta.estudiantes.buscar', [
+            'buscar' => 'Estudiante Reservado',
+        ]))->assertOk()
+            ->assertJsonPath('estudiantes.0.id', $estudianteId);
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->post(route('incidencias.acta.store'), [
+            'estudiante_id' => $estudianteId,
+            'agredido_nombres_iniciales' => 'Estudiante Reservado',
+            'tipos_violencia' => ['sexual'],
+        ])->assertSessionHasErrors('agredido_nombres_iniciales');
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->post(route('incidencias.acta.store'), [
+            'estudiante_id' => $estudianteId,
+            'fecha' => '2020-01-01',
+        ])->assertRedirect();
+
+        $actaVacia = \DB::table('incidencias')
+            ->where('es_reservada', true)
+            ->whereNull('curso_id')
+            ->whereNull('descripcion')
+            ->first();
+        $this->assertNotNull($actaVacia);
+        $this->assertSame(now()->toDateString(), $actaVacia->fecha);
+        $actaVaciaId = \DB::table('actas_incidencia')
+            ->where('incidencia_id', $actaVacia->id)
+            ->value('id');
+        $this->assertNotNull($actaVaciaId);
+        $this->assertDatabaseMissing('acta_agresores', [
+            'acta_incidencia_id' => $actaVaciaId,
+        ]);
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->get(route('incidencias.acta.edit', $incidenciaId))
+            ->assertOk()
+            ->assertSee('I.E. Tungasuca')
+            ->assertSee('Presunto agresor');
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->put(route('incidencias.acta.update', $incidenciaId), [
+            'estudiante_id' => $estudianteId,
+            'ie' => 'I.E. Actualizada',
+        ])->assertRedirect(route('incidencias.show', $incidenciaId));
+        $this->assertDatabaseHas('actas_incidencia', [
+            'incidencia_id' => $incidenciaId,
+            'ie' => 'I.E. Actualizada',
+        ]);
+        $this->assertDatabaseMissing('acta_agresores', [
+            'acta_incidencia_id' => $actaId,
+        ]);
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->get(route('incidencias.acta.pdf', $incidenciaId))
+            ->assertDownload('acta-incidencia-'.$incidenciaId.'.pdf');
+
+        $this->withSession([
+            'usuario_id' => 1,
+            'usuario_rol' => 'Administrador',
+        ])->get(route('incidencias.acta.pdf', $incidenciaId))
+            ->assertForbidden();
+
+        $profesor = User::create([
+            'name' => 'Profesor',
+            'email' => 'profesor-acta@example.test',
+            'dni' => '87654318',
+            'password' => 'clave-segura',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        AsignacionDocente::create([
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'seccion_id' => $seccion->id,
+        ]);
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('incidencias.index'))
+            ->assertOk()
+            ->assertSee('Reservado')
+            ->assertDontSee('Registro reservado');
+        $this->get(route('incidencias.show', $incidenciaId))
+            ->assertForbidden();
+        $this->get(route('incidencias.acta.pdf', $incidenciaId))
+            ->assertForbidden();
     }
 
     public function test_teacher_can_search_students_and_download_scoped_incidence_reports(): void

@@ -36,9 +36,8 @@ Route::middleware(['auth.custom'])->group(function () {
     });
 });
 
-Route::middleware(['auth.custom', 'role:Profesor'])->group(function () {
+Route::middleware(['auth.custom', 'role:Profesor,Directora,Subdirector'])->group(function () {
     Route::get('estudiantes', [EstudianteController::class, 'index'])->name('estudiantes.index');
-    Route::post('estudiantes', [EstudianteController::class, 'store'])->name('estudiantes.store');
     Route::get('estudiantes/{estudiante}/reporte', [EstudianteController::class, 'reporteSeleccionar'])
         ->name('estudiantes.reporte.seleccionar');
     Route::post('estudiantes/{estudiante}/reporte', [EstudianteController::class, 'reportePdf'])
@@ -47,10 +46,29 @@ Route::middleware(['auth.custom', 'role:Profesor'])->group(function () {
         ->name('estudiantes.reporte.pdf');
 });
 
+Route::post('estudiantes', [EstudianteController::class, 'store'])
+    ->middleware(['auth.custom', 'role:Profesor'])
+    ->name('estudiantes.store');
+
 Route::middleware(['auth.custom'])->group(function () {
     Route::get('incidencias/urgencias', [IncidenciaController::class, 'urgencias'])
         ->middleware('role:Administrador,Directora,Subdirector')
         ->name('incidencias.urgencias');
+    Route::get('incidencias/acta/create', [IncidenciaController::class, 'createActa'])
+        ->middleware('role:Directora,Subdirector')
+        ->name('incidencias.acta.create');
+    Route::post('incidencias/acta', [IncidenciaController::class, 'storeActa'])
+        ->middleware('role:Directora,Subdirector')
+        ->name('incidencias.acta.store');
+    Route::get('incidencias/{incidencia}/acta/edit', [IncidenciaController::class, 'editActa'])
+        ->middleware('role:Directora,Subdirector')
+        ->name('incidencias.acta.edit');
+    Route::match(['put', 'patch'], 'incidencias/{incidencia}/acta', [IncidenciaController::class, 'updateActa'])
+        ->middleware('role:Directora,Subdirector')
+        ->name('incidencias.acta.update');
+    Route::get('incidencias/acta/estudiantes/buscar', [IncidenciaController::class, 'buscarEstudiantesActa'])
+        ->middleware('role:Directora,Subdirector')
+        ->name('incidencias.acta.estudiantes.buscar');
     Route::get('incidencias', [IncidenciaController::class, 'index'])
         ->middleware('role:Administrador,Profesor,Directora,Subdirector')
         ->name('incidencias.index');
@@ -75,6 +93,9 @@ Route::middleware(['auth.custom'])->group(function () {
     Route::delete('incidencias/{incidencia}', [IncidenciaController::class, 'destroy'])
         ->middleware('role:Administrador,Directora')
         ->name('incidencias.destroy');
+    Route::get('incidencias/{incidencia}/acta/pdf', [IncidenciaController::class, 'pdfActa'])
+        ->middleware('role:Directora,Subdirector')
+        ->name('incidencias.acta.pdf');
     Route::get('incidencias/{incidencia}', [IncidenciaController::class, 'show'])
         ->middleware('role:Administrador,Profesor,Directora,Subdirector')
         ->name('incidencias.show');

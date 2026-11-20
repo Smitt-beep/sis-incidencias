@@ -5,9 +5,12 @@
 @section('content')
     <div class="mb-4">
         <h1 class="h2 mb-1">Alumnos</h1>
-        <p class="text-secondary mb-0">Registra alumnos en tus secciones asignadas y consulta sus datos.</p>
+        <p class="text-secondary mb-0">
+            {{ $rol === 'Profesor' ? 'Alumnos de tus secciones asignadas.' : 'Consulta alumnos y genera sus reportes de incidencias.' }}
+        </p>
     </div>
 
+    @if ($rol === 'Profesor')
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-body p-4">
             <h2 class="h5 mb-3">Añadir alumno</h2>
@@ -72,10 +75,11 @@
             @endif
         </div>
     </div>
+    @endif
 
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2 class="h5 mb-0">Alumnos de mis secciones</h2>
-        <span class="badge text-bg-secondary">{{ $estudiantes->count() }}</span>
+        <h2 class="h5 mb-0">{{ $rol === 'Profesor' ? 'Alumnos de mis secciones' : 'Alumnos' }}</h2>
+        <span class="badge text-bg-secondary">{{ $estudiantes->total() }}</span>
     </div>
 
     <form action="{{ route('estudiantes.index') }}" method="GET" class="row g-2 align-items-end mb-3">
@@ -90,9 +94,20 @@
                 placeholder="Nombre o DNI"
             >
         </div>
+        <div class="col-sm-6 col-md-4">
+            <label for="filtro-seccion" class="form-label">Sección</label>
+            <select name="seccion_id" id="filtro-seccion" class="form-select">
+                <option value="">Todas las secciones</option>
+                @foreach ($secciones as $seccion)
+                    <option value="{{ $seccion->id }}" @selected((string) $seccionId === (string) $seccion->id)>
+                        {{ $seccion->grado }} - {{ $seccion->seccion }}
+                    </option>
+                @endforeach
+            </select>
+        </div>
         <div class="col-auto">
             <button type="submit" class="btn btn-primary">Buscar</button>
-            @if ($buscar !== '')
+            @if ($buscar !== '' || $seccionId)
                 <a href="{{ route('estudiantes.index') }}" class="btn btn-outline-secondary">Limpiar</a>
             @endif
         </div>
@@ -107,7 +122,7 @@
                         <th scope="col">Nombre completo</th>
                         <th scope="col">Grado</th>
                         <th scope="col">Sección</th>
-                        <th scope="col">Acciones</th>
+                        <th scope="col">Reportes</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -130,7 +145,7 @@
                                     <ul class="dropdown-menu">
                                         <li>
                                             <a class="dropdown-item" href="{{ route('estudiantes.reporte.seleccionar', $estudiante) }}">
-                                                Elegir incidencias
+                                                Generar uno o varios (seleccionar)
                                             </a>
                                         </li>
                                         <li>
@@ -145,12 +160,17 @@
                     @empty
                         <tr>
                             <td colspan="5" class="text-center text-secondary py-4">
-                                No hay alumnos registrados en tus secciones.
+                                {{ $rol === 'Profesor' ? 'No hay alumnos registrados en tus secciones.' : 'No hay alumnos que coincidan con la búsqueda.' }}
                             </td>
                         </tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
+        @if ($estudiantes->hasPages())
+            <div class="p-3 border-top">
+                {{ $estudiantes->links('pagination::bootstrap-5') }}
+            </div>
+        @endif
     </div>
 @endsection

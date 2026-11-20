@@ -1,0 +1,228 @@
+diff --git a/app/Http/Controllers/EstudianteController.php b/app/Http/Controllers/EstudianteController.php
+index 00c667e..18762c8 100644
+--- a/app/Http/Controllers/EstudianteController.php
++++ b/app/Http/Controllers/EstudianteController.php
+@@ -83,6 +83,7 @@ private function authorizeReporteEstudiante(Request $request, Estudiante $estudi
+     private function incidenciasDeEstudiante(Estudiante $estudiante, ?array $ids = null): EloquentCollection
+     {
+         return $estudiante->incidencias()
++            ->where('es_reservada', false) // las actas reservadas no salen en el reporte al apoderado
+             ->with(['gravedad', 'estado', 'curso'])
+             ->when($ids !== null, fn ($query) => $query->whereIn('id', $ids))
+             ->orderByDesc('fecha')
+diff --git a/app/Http/Controllers/IncidenciaController.php b/app/Http/Controllers/IncidenciaController.php
+index 9c7c331..ad93c11 100644
+--- a/app/Http/Controllers/IncidenciaController.php
++++ b/app/Http/Controllers/IncidenciaController.php
+@@ -34,7 +34,16 @@ public function index(Request $request)
+ 
+         $query = $this->incidenciasQuery();
+         if ($user->rol?->nombre_rol === 'Profesor') {
+-            $query->where('usuario_id', $user->getKey());
++            // Sus propias incidencias + las actas reservadas de alumnos de sus secciones
++            // (estas últimas se muestran solo con la etiqueta "Reservado").
++            $seccionesAsignadas = $user->asignacionesDocentes()->pluck('seccion_id');
++            $query->where(function (Builder $q) use ($user, $seccionesAsignadas) {
++                $q->where('usuario_id', $user->getKey())
++                    ->orWhere(function (Builder $reservadas) use ($seccionesAsignadas) {
++                        $reservadas->where('es_reservada', true)
++                            ->whereHas('estudiante', fn (Builder $e) => $e->whereIn('seccion_id', $seccionesAsignadas));
++                    });
++            });
+         }
+ 
+         $buscar = trim((string) $request->input('buscar', ''));
+diff --git a/app/Models/ActaAgresor.php b/app/Models/ActaAgresor.php
+new file mode 100644
+index 0000000..3d0bb1b
+--- /dev/null
++++ b/app/Models/ActaAgresor.php
+@@ -0,0 +1,21 @@
++<?php
++
++namespace App\Models;
++
++use Illuminate\Database\Eloquent\Model;
++use Illuminate\Database\Eloquent\Relations\BelongsTo;
++
++/**
++ * Presunto agresor de un acta (tipo: estudiante | adulto).
++ */
++class ActaAgresor extends Model
++{
++    protected $table = 'acta_agresores';
++
++    protected $guarded = ['id', 'acta_incidencia_id'];
++
++    public function acta(): BelongsTo
++    {
++        return $this->belongsTo(ActaIncidencia::class, 'acta_incidencia_id');
++    }
++}
+diff --git a/app/Models/ActaIncidencia.php b/app/Models/ActaIncidencia.php
+new file mode 100644
+index 0000000..381c047
+--- /dev/null
++++ b/app/Models/ActaIncidencia.php
+@@ -0,0 +1,34 @@
++<?php
++
++namespace App\Models;
++
++use Illuminate\Database\Eloquent\Model;
++use Illuminate\Database\Eloquent\Relations\BelongsTo;
++use Illuminate\Database\Eloquent\Relations\HasMany;
++
++/**
++ * Datos propios del formato "Acta de Incidencia" (solo Directora / Subdirector).
++ * Casi todo es texto libre que la directora escribe a mano.
++ */
++class ActaIncidencia extends Model
++{
++    protected $table = 'actas_incidencia';
++
++    protected $guarded = ['id', 'incidencia_id'];
++
++    protected $casts = [
++        'sisve_fecha' => 'date',
++        'agredido_discapacidad' => 'boolean',
++        'tipos_violencia' => 'array',
++    ];
++
++    public function incidencia(): BelongsTo
++    {
++        return $this->belongsTo(Incidencia::class, 'incidencia_id');
++    }
++
++    public function agresores(): HasMany
++    {
++        return $this->hasMany(ActaAgresor::class, 'acta_incidencia_id');
++    }
++}
+diff --git a/app/Models/Incidencia.php b/app/Models/Incidencia.php
+index a0ccb30..5ca293d 100644
+--- a/app/Models/Incidencia.php
++++ b/app/Models/Incidencia.php
+@@ -6,6 +6,7 @@
+ use Illuminate\Database\Eloquent\Relations\BelongsTo;
+ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+ use Illuminate\Database\Eloquent\Relations\HasMany;
++use Illuminate\Database\Eloquent\Relations\HasOne;
+ use Illuminate\Database\Eloquent\SoftDeletes;
+ 
+ class Incidencia extends Model
+@@ -26,6 +27,11 @@ class Incidencia extends Model
+         'descripcion',
+         'gravedad_id',
+         'estado_id',
++        'es_reservada',
++    ];
++
++    protected $casts = [
++        'es_reservada' => 'boolean',
+     ];
+ 
+     public function estudiante(): BelongsTo
+@@ -38,6 +44,14 @@ public function usuario(): BelongsTo
+         return $this->belongsTo(User::class, 'usuario_id', 'id');
+     }
+ 
++    /**
++     * Datos del acta (formato de la directora). Solo existe si es_reservada = true.
++     */
++    public function acta(): HasOne
++    {
++        return $this->hasOne(ActaIncidencia::class, 'incidencia_id');
++    }
++
+     public function eliminadoPor(): BelongsTo
+     {
+         return $this->belongsTo(User::class, 'eliminado_por');
+diff --git a/app/Policies/IncidenciaPolicy.php b/app/Policies/IncidenciaPolicy.php
+index dfc64d4..e2848cc 100644
+--- a/app/Policies/IncidenciaPolicy.php
++++ b/app/Policies/IncidenciaPolicy.php
+@@ -19,6 +19,11 @@ public function viewAny(User $user): bool
+ 
+     public function view(User $user, Incidencia $incidencia): bool
+     {
++        // Las actas reservadas solo las ve la dirección (no profesores ni administrador).
++        if ($incidencia->es_reservada) {
++            return $this->puedeGestionarActa($user);
++        }
++
+         return in_array($user->rol?->nombre_rol, [
+             'Administrador',
+             'Directora',
+@@ -33,15 +38,36 @@ public function create(User $user): bool
+ 
+     public function update(User $user, Incidencia $incidencia): bool
+     {
++        if ($incidencia->es_reservada) {
++            return $this->puedeGestionarActa($user);
++        }
++
+         return $user->rol?->nombre_rol === 'Administrador'
+             || $this->isOwnerProfessor($user, $incidencia);
+     }
+ 
+     public function delete(User $user, Incidencia $incidencia): bool
+     {
++        if ($incidencia->es_reservada) {
++            return $user->rol?->nombre_rol === 'Directora';
++        }
++
+         return in_array($user->rol?->nombre_rol, ['Administrador', 'Directora'], true);
+     }
+ 
++    /**
++     * Imprimir / descargar el acta: solo Directora y Subdirector, y solo si es reservada.
++     */
++    public function imprimirActa(User $user, Incidencia $incidencia): bool
++    {
++        return $incidencia->es_reservada && $this->puedeGestionarActa($user);
++    }
++
++    private function puedeGestionarActa(User $user): bool
++    {
++        return in_array($user->rol?->nombre_rol, ['Directora', 'Subdirector'], true);
++    }
++
+     private function isOwnerProfessor(User $user, Incidencia $incidencia): bool
+     {
+         return $user->rol?->nombre_rol === 'Profesor'
+diff --git a/resources/views/incidencias/index.blade.php b/resources/views/incidencias/index.blade.php
+index ff5551a..d096d52 100644
+--- a/resources/views/incidencias/index.blade.php
++++ b/resources/views/incidencias/index.blade.php
+@@ -55,6 +55,30 @@ class="form-control"
+                 </thead>
+                 <tbody>
+                     @forelse ($incidencias as $incidencia)
++                        @php
++                            $puedeVerActa = in_array(session('usuario_rol'), ['Directora', 'Subdirector'], true);
++                        @endphp
++                        @if ($incidencia->es_reservada && ! $puedeVerActa)
++                            {{-- Acta reservada: solo se muestra alumno, fecha y la etiqueta "Reservado" --}}
++                            <tr>
++                                <td>{{ $incidencia->id }}</td>
++                                <td>{{ $incidencia->estudiante?->nombre ?? '—' }}</td>
++                                <td>—</td>
++                                <td>
++                                    @if ($incidencia->estudiante?->seccion)
++                                        {{ $incidencia->estudiante->seccion->grado }} - {{ $incidencia->estudiante->seccion->seccion }}
++                                    @else
++                                        —
++                                    @endif
++                                </td>
++                                <td>{{ \Carbon\Carbon::parse($incidencia->fecha)->format('d/m/Y') }}</td>
++                                <td>—</td>
++                                <td><span class="badge text-bg-secondary">Reservado</span></td>
++                                <td><span class="badge text-bg-secondary">Reservado</span></td>
++                                <td></td>
++                            </tr>
++                            @continue
++                        @endif
+                         <tr>
+                             <td>{{ $incidencia->id }}</td>
+                             <td>{{ $incidencia->estudiante?->nombre ?? '—' }}</td>

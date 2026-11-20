@@ -5,7 +5,7 @@
 @section('content')
     <div class="mb-4">
         <h1 class="h2 mb-1">Seleccionar incidencias para reporte de {{ $estudiante->nombre }}</h1>
-        <p class="text-secondary mb-0">Elige las incidencias que deseas incluir en el reporte.</p>
+        <p class="text-secondary mb-0">Marca una incidencia para generar un reporte individual o varias para generar un reporte combinado.</p>
     </div>
 
     @if ($incidencias->isEmpty())

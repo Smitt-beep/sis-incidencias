@@ -9,6 +9,10 @@
             <p class="text-secondary mb-0">Detalle completo del registro.</p>
         </div>
         <div class="d-flex gap-2">
+            @if ($incidencia->es_reservada && in_array(session('usuario_rol'), ['Directora', 'Subdirector'], true))
+                <a href="{{ route('incidencias.acta.edit', $incidencia) }}" class="btn btn-outline-primary">Editar acta</a>
+                <a href="{{ route('incidencias.acta.pdf', $incidencia) }}" class="btn btn-primary">Descargar acta PDF</a>
+            @endif
             @if (session('usuario_rol') === 'Administrador'
                 || (session('usuario_rol') === 'Profesor' && (int) $incidencia->usuario_id === (int) session('usuario_id')))
                 <a href="{{ route('incidencias.edit', $incidencia) }}" class="btn btn-primary">Editar</a>

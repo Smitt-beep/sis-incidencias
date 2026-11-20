@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Estudiante;
+use App\Models\Seccion;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -15,14 +16,31 @@ class EstudianteController extends Controller
 {
     public function index(Request $request)
     {
-        $profesor = User::findOrFail($request->session()->get('usuario_id'));
-        $secciones = $profesor->seccionesDocentes()
-            ->orderBy('grado')
-            ->orderBy('seccion')
-            ->get();
-        $query = Estudiante::with('seccion')
-            ->whereIn('seccion_id', $secciones->modelKeys());
+        $usuario = User::with('rol')->findOrFail($request->session()->get('usuario_id'));
+        $rol = $usuario->rol?->nombre_rol;
+        abort_unless(in_array($rol, ['Profesor', 'Directora', 'Subdirector'], true), 403);
+
+        $secciones = $rol === 'Profesor'
+            ? $usuario->seccionesDocentes()->orderBy('grado')->orderBy('seccion')->get()
+            : Seccion::query()->orderBy('grado')->orderBy('seccion')->get();
+        $query = Estudiante::with('seccion');
+
+        if ($rol === 'Profesor') {
+            $query->whereIn('seccion_id', $secciones->modelKeys());
+        }
+
         $buscar = trim((string) $request->input('buscar', ''));
+        $seccionId = $request->input('seccion_id');
+
+        if ($seccionId !== null && $seccionId !== '') {
+            $request->validate([
+                'seccion_id' => [
+                    'integer',
+                    Rule::in($secciones->modelKeys()),
+                ],
+            ]);
+            $query->where('seccion_id', (int) $seccionId);
+        }
 
         if ($buscar !== '') {
             $operator = DB::connection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
@@ -33,9 +51,9 @@ class EstudianteController extends Controller
             });
         }
 
-        $estudiantes = $query->orderBy('nombre')->get();
+        $estudiantes = $query->orderBy('nombre')->paginate(25)->withQueryString();
 
-        return view('estudiantes.index', compact('secciones', 'estudiantes', 'buscar'));
+        return view('estudiantes.index', compact('secciones', 'estudiantes', 'buscar', 'seccionId', 'rol'));
     }
 
     public function reporteSeleccionar(Request $request, Estudiante $estudiante)
@@ -73,16 +91,24 @@ class EstudianteController extends Controller
 
     private function authorizeReporteEstudiante(Request $request, Estudiante $estudiante): void
     {
-        $profesor = User::findOrFail($request->session()->get('usuario_id'));
-        abort_unless(
-            $profesor->seccionesDocentes()->whereKey($estudiante->seccion_id)->exists(),
-            404
-        );
+        $usuario = User::with('rol')->findOrFail($request->session()->get('usuario_id'));
+        $rol = $usuario->rol?->nombre_rol;
+
+        if ($rol === 'Profesor') {
+            abort_unless(
+                $usuario->seccionesDocentes()->whereKey($estudiante->seccion_id)->exists(),
+                404
+            );
+            return;
+        }
+
+        abort_unless(in_array($rol, ['Directora', 'Subdirector'], true), 403);
     }
 
     private function incidenciasDeEstudiante(Estudiante $estudiante, ?array $ids = null): EloquentCollection
     {
         return $estudiante->incidencias()
+            ->where('es_reservada', false) // las actas reservadas no salen en el reporte al apoderado
             ->with(['gravedad', 'estado', 'curso'])
             ->when($ids !== null, fn ($query) => $query->whereIn('id', $ids))
             ->orderByDesc('fecha')

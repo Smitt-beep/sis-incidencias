@@ -74,7 +74,7 @@
                         <a class="nav-link {{ request()->routeIs('incidencias.*') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.index') }}">Incidencias</a>
                         <a class="nav-link {{ request()->routeIs('estudiantes.*') ? 'active' : 'text-dark' }}" href="{{ route('estudiantes.index') }}">Alumnos</a>
                     @elseif (in_array($rol, ['Directora', 'Subdirector'], true))
-                        <span class="nav-link text-secondary disabled">Alumnos</span>
+                        <a class="nav-link {{ request()->routeIs('estudiantes.*') ? 'active' : 'text-dark' }}" href="{{ route('estudiantes.index') }}">Alumnos</a>
                         <a class="nav-link {{ request()->routeIs('secciones.*') ? 'active' : 'text-dark' }}" href="{{ route('secciones.index') }}">Grados</a>
                         @if ($rol === 'Directora' || $rol === 'Subdirector')
                             <a class="nav-link {{ request()->routeIs('incidencias.urgencias') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.urgencias') }}">Urgencias</a>
