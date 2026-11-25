@@ -115,7 +115,6 @@ class ReporteProfesionalController extends Controller
             ->with(['gravedad:id,nombre', 'estado:id,nombre', 'estudiante.seccion:id,grado,seccion', 'curso:id,nombre'])
             ->where('usuario_id', $profesor->id)
             ->where('curso_id', $curso->id)
-            ->where('es_reservada', false)
             ->whereHas('estudiante', fn ($query) => $query->whereIn('seccion_id', $seccionesIds))
             ->orderByDesc('fecha')
             ->orderByDesc('hora')

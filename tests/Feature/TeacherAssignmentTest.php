@@ -819,7 +819,7 @@ class TeacherAssignmentTest extends TestCase
             ->assertSee('>0</div>', false);
     }
 
-    public function test_professor_professional_report_supports_multiple_sections_and_excludes_reserved_actas(): void
+    public function test_professor_professional_report_supports_multiple_sections_and_counts_reserved_without_showing_content(): void
     {
         $curso = Curso::create(['nombre' => 'Comunicación']);
         $seccionA = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
@@ -992,7 +992,7 @@ class TeacherAssignmentTest extends TestCase
             ->assertSessionHasErrors('secciones');
     }
 
-    public function test_professor_dashboard_excludes_reserved_actas_and_requires_matching_context(): void
+    public function test_professor_dashboard_counts_reserved_actas_and_requires_matching_context(): void
     {
         $curso = Curso::create(['nombre' => 'Matemática']);
         $seccion = Seccion::create(['grado' => '2.º', 'seccion' => 'B']);
@@ -1035,7 +1035,7 @@ class TeacherAssignmentTest extends TestCase
             ->assertOk()
             ->assertSee('id="grafico-incidencias"', false)
             ->assertSee('"seleccionado":true', false)
-            ->assertSee('"total":1', false);
+            ->assertSee('"total":2', false);
 
         $this->withSession([
             'usuario_id' => $profesor->id,
@@ -1044,6 +1044,60 @@ class TeacherAssignmentTest extends TestCase
             ->assertOk()
             ->assertSee('"seleccionado":true', false)
             ->assertSee('"total":0', false);
+    }
+
+    public function test_professor_dashboard_and_list_count_reserved_incidents_without_exposing_content(): void
+    {
+        $curso = Curso::create(['nombre' => 'Comunicación']);
+        $seccion = Seccion::create(['grado' => '3.º', 'seccion' => 'A']);
+        $profesor = User::create([
+            'name' => 'Profesor Reservadas',
+            'email' => 'profesor.reservadas@example.test',
+            'dni' => '66778899',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        AsignacionDocente::create([
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'seccion_id' => $seccion->id,
+        ]);
+        $estudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '77889900',
+            'nombre' => 'Alumno Reservado Propio',
+            'seccion_id' => $seccion->id,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Grave']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+        $incidenciaId = \DB::table('incidencias')->insertGetId([
+            'estudiante_id' => $estudianteId,
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'fecha' => now()->toDateString(),
+            'hora' => '09:30:00',
+            'descripcion' => 'CONTENIDO RESERVADO NO VISIBLE',
+            'gravedad_id' => $gravedadId,
+            'estado_id' => $estadoId,
+            'es_reservada' => true,
+        ]);
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('dashboard').'?grado='.urlencode($seccion->grado).'&seccion_id='.$seccion->id.'&curso_id='.$curso->id)
+            ->assertOk()
+            ->assertSee('"seleccionado":true', false)
+            ->assertSee('"total":1', false);
+
+        $this->get(route('incidencias.index'))
+            ->assertOk()
+            ->assertSee('Alumno Reservado Propio')
+            ->assertSee('Reservado')
+            ->assertDontSee('CONTENIDO RESERVADO NO VISIBLE');
+        $this->get(route('incidencias.show', $incidenciaId))
+            ->assertForbidden();
     }
 
     public function test_incidence_search_filters_by_student_name(): void

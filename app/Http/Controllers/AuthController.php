@@ -182,7 +182,6 @@ class AuthController extends Controller
                 return $consulta
                     ->where('usuario_id', $usuario->getKey())
                     ->where('curso_id', $contextoProfesor['curso_id'])
-                    ->where('es_reservada', false)
                     ->whereHas('estudiante', fn ($q) => $q->where('seccion_id', $contextoProfesor['seccion_id']));
             });
 
@@ -273,7 +272,6 @@ class AuthController extends Controller
             ])
             ->where('usuario_id', $usuario->getKey())
             ->where('curso_id', $contexto['curso_id'])
-            ->where('es_reservada', false)
             ->whereHas('estudiante', fn ($q) => $q->where('seccion_id', $contexto['seccion_id']));
 
         // --- Mes actual, dividido en cuatro semanas ---
