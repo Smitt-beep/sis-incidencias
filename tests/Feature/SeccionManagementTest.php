@@ -82,6 +82,7 @@ class SeccionManagementTest extends TestCase
 
         $response->assertOk()
             ->assertSee('Gestión de Grados')
+            ->assertSeeInOrder(['Inicio', 'Usuarios', 'Incidencias', 'Grado', 'Reporte Profesional'])
             ->assertSeeInOrder([
                 '1.º',
                 'Matemática',
@@ -92,7 +93,9 @@ class SeccionManagementTest extends TestCase
                 'Sin secciones registradas',
             ])
             ->assertSee('Cursos')
-            ->assertSee('Acciones');
+            ->assertSee('Acciones')
+            ->assertDontSee('Generar Reporte Profesional Institucional')
+            ->assertDontSee('reporte-grado', false);
 
         $this->assertSame(2, substr_count($response->getContent(), 'data-grade-row='));
     }

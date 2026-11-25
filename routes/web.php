@@ -7,6 +7,7 @@ use App\Http\Controllers\IncidenciaController;
 use App\Http\Controllers\IncidenciaFotografiaController;
 use App\Http\Controllers\SeccionController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\ReporteProfesionalController;
 use Illuminate\Support\Facades\Route;
 
 // Ruta principal: redirige al login por defecto
@@ -49,6 +50,20 @@ Route::middleware(['auth.custom', 'role:Profesor,Directora,Subdirector'])->group
 Route::post('estudiantes', [EstudianteController::class, 'store'])
     ->middleware(['auth.custom', 'role:Profesor'])
     ->name('estudiantes.store');
+Route::middleware(['auth.custom', 'role:Profesor'])->group(function () {
+    Route::get('estudiantes/{estudiante}/editar', [EstudianteController::class, 'edit'])
+        ->name('estudiantes.edit');
+    Route::match(['put', 'patch'], 'estudiantes/{estudiante}', [EstudianteController::class, 'update'])
+        ->name('estudiantes.update');
+    Route::post('reporte-profesional', [ReporteProfesionalController::class, 'generar'])
+        ->name('reporte-profesional.generar');
+});
+Route::get('reporte-profesional', [ReporteProfesionalController::class, 'index'])
+    ->middleware(['auth.custom', 'role:Administrador,Profesor,Directora,Subdirector'])
+    ->name('reporte-profesional.index');
+Route::post('reporte-profesional/institucional', [SeccionController::class, 'reporteProfesional'])
+    ->middleware(['auth.custom', 'role:Administrador,Directora,Subdirector'])
+    ->name('reporte-profesional.institucional.generar');
 
 Route::middleware(['auth.custom'])->group(function () {
     Route::get('incidencias/urgencias', [IncidenciaController::class, 'urgencias'])
@@ -110,6 +125,8 @@ Route::middleware(['auth.custom', 'role:Administrador'])->group(function () {
 });
 
 Route::middleware(['auth.custom', 'role:Administrador,Directora,Subdirector'])->group(function () {
+    Route::post('secciones/reporte-profesional', [SeccionController::class, 'reporteProfesional'])
+        ->name('secciones.reporte-profesional');
     Route::resource('secciones', SeccionController::class)
         ->except(['show', 'destroy'])
         ->parameters(['secciones' => 'seccion']);

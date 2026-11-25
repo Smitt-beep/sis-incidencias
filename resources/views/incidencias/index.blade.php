@@ -5,7 +5,14 @@
 @section('content')
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
-            <h1 class="h2 mb-1">{{ ($esUrgencias ?? false) ? 'Urgencias' : 'Incidencias' }}</h1>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <h1 class="h2 mb-1">{{ ($esUrgencias ?? false) ? 'Urgencias' : 'Incidencias' }}</h1>
+                @if ($esUrgencias ?? false)
+                    <span class="urgencias-active-count" aria-label="{{ $urgenciasActivas }} {{ $urgenciasActivas === 1 ? 'urgencia activa' : 'urgencias activas' }}">
+                        {{ number_format($urgenciasActivas) }} {{ $urgenciasActivas === 1 ? 'urgencia activa' : 'urgencias activas' }}
+                    </span>
+                @endif
+            </div>
             <p class="text-secondary mb-0">
                 {{ ($esUrgencias ?? false) ? 'Incidencias graves pendientes o en proceso.' : 'Registro y seguimiento de incidencias.' }}
             </p>
@@ -40,20 +47,44 @@
         </form>
     @endunless
 
+    @php
+        $esUrgenciasDirectivas = ($esUrgencias ?? false)
+            && in_array(session('usuario_rol'), ['Directora', 'Subdirector'], true);
+    @endphp
+
     <div class="card border-0 shadow-sm">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
+        <div class="{{ ($esUrgencias ?? false) ? 'urgencias-table-wrap' : 'table-responsive' }}">
+            <table class="table table-hover align-middle mb-0 {{ ($esUrgencias ?? false) ? 'urgencias-table' : '' }}{{ $esUrgenciasDirectivas ? ' urgencias-table--directivo' : '' }}">
+                @if ($esUrgencias ?? false)
+                    <colgroup>
+                        <col class="urgencias-col-id">
+                        <col class="urgencias-col-student">
+                        <col class="urgencias-col-section">
+                        <col class="urgencias-col-course">
+                        <col class="urgencias-col-datetime">
+                        <col class="urgencias-col-actions">
+                    </colgroup>
+                @endif
                 <thead class="table-light">
                     <tr>
-                        <th scope="col">ID</th>
-                        <th scope="col">Estudiante</th>
-                        <th scope="col">Curso</th>
-                        <th scope="col">Sección</th>
-                        <th scope="col">Fecha</th>
-                        <th scope="col">Hora</th>
-                        <th scope="col">Gravedad</th>
-                        <th scope="col">Estado</th>
-                        <th scope="col" class="text-end">Acciones</th>
+                        @if ($esUrgencias ?? false)
+                            <th scope="col">ID</th>
+                            <th scope="col">Estudiante</th>
+                            <th scope="col">Grado / Sección</th>
+                            <th scope="col">Curso</th>
+                            <th scope="col">Fecha y hora</th>
+                            <th scope="col" class="text-end">Acciones</th>
+                        @else
+                            <th scope="col">ID</th>
+                            <th scope="col">Estudiante</th>
+                            <th scope="col">Curso</th>
+                            <th scope="col">Sección</th>
+                            <th scope="col">Fecha</th>
+                            <th scope="col">Hora</th>
+                            <th scope="col">Gravedad</th>
+                            <th scope="col">Estado</th>
+                            <th scope="col" class="text-end">Acciones</th>
+                        @endif
                     </tr>
                 </thead>
                 <tbody>
@@ -61,7 +92,52 @@
                         @php
                             $puedeVerActa = in_array(session('usuario_rol'), ['Directora', 'Subdirector'], true);
                         @endphp
-                        @if ($incidencia->es_reservada && ! $puedeVerActa)
+                        @if ($esUrgencias ?? false)
+                            @php
+                                $contenidoReservado = $incidencia->es_reservada && ! $puedeVerActa;
+                                $seccionEstudiante = $incidencia->estudiante?->seccion;
+                                $nombreEstudiante = $incidencia->estudiante?->nombre ?? '—';
+                            @endphp
+                            <tr>
+                                <td>{{ $incidencia->id }}</td>
+                                <td class="urgencias-truncate" title="{{ $nombreEstudiante }}">{{ $nombreEstudiante }}</td>
+                                <td class="urgencias-truncate" title="{{ $seccionEstudiante ? $seccionEstudiante->grado.' - '.$seccionEstudiante->seccion : '—' }}">
+                                    @if ($seccionEstudiante)
+                                        {{ $seccionEstudiante->grado }} - {{ $seccionEstudiante->seccion }}
+                                    @else
+                                        —
+                                    @endif
+                                </td>
+                                <td class="urgencias-truncate" title="{{ $contenidoReservado ? '—' : ($incidencia->curso?->nombre ?? '—') }}">
+                                    {{ $contenidoReservado ? '—' : ($incidencia->curso?->nombre ?? '—') }}
+                                </td>
+                                <td class="urgencias-datetime">
+                                    <span class="urgencias-date">{{ \Carbon\Carbon::parse($incidencia->fecha)->format('d/m/Y') }}</span>
+                                    <span class="urgencias-time">{{ $contenidoReservado || ! $incidencia->hora ? '—' : substr((string) $incidencia->hora, 0, 5) }}</span>
+                                </td>
+                                <td class="urgencias-actions-cell">
+                                    @unless ($contenidoReservado)
+                                        <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 urgencias-actions">
+                                            <a href="{{ route('incidencias.show', $incidencia) }}" class="btn btn-sm btn-outline-secondary">Ver</a>
+                                            @if ($incidencia->es_reservada && $puedeVerActa)
+                                                <a href="{{ route('incidencias.acta.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar acta</a>
+                                            @endif
+                                            @if (session('usuario_rol') === 'Administrador'
+                                                || (session('usuario_rol') === 'Profesor' && (int) $incidencia->usuario_id === (int) session('usuario_id')))
+                                                <a href="{{ route('incidencias.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar</a>
+                                            @endif
+                                            @if (in_array(session('usuario_rol'), ['Administrador', 'Directora'], true))
+                                                <form action="{{ route('incidencias.destroy', $incidencia) }}" method="POST" onsubmit="return confirm('¿Eliminar esta incidencia?')">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                                                </form>
+                                            @endif
+                                        </div>
+                                    @endunless
+                                </td>
+                            </tr>
+                        @elseif ($incidencia->es_reservada && ! $puedeVerActa)
                             {{-- Acta reservada: solo se muestra alumno, fecha y la etiqueta "Reservado" --}}
                             <tr>
                                 <td>{{ $incidencia->id }}</td>
@@ -129,14 +205,20 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="text-center text-secondary py-4">No hay incidencias registradas.</td>
+                            <td colspan="{{ ($esUrgencias ?? false) ? 6 : 9 }}" class="text-center text-secondary py-4">
+                                {{ ($esUrgencias ?? false) ? 'No hay urgencias activas.' : 'No hay incidencias registradas.' }}
+                            </td>
                         </tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
 
-        @if ($incidencias->hasPages())
+        @if ($esUrgencias ?? false)
+            <div class="p-3 border-top">
+                {{ $incidencias->onEachSide(1)->links('pagination.urgencias') }}
+            </div>
+        @elseif ($incidencias->hasPages())
             <div class="p-3 border-top">
                 {{ $incidencias->links('pagination::bootstrap-5') }}
             </div>

@@ -300,10 +300,12 @@ class IncidenciaController extends Controller
             ->whereHas('estado', function (Builder $query) {
                 $query->whereRaw('LOWER(nombre) IN (?, ?)', ['pendiente', 'en proceso']);
             })
-            ->paginate(15);
+            ->paginate(15)
+            ->withQueryString();
+        $urgenciasActivas = $incidencias->total();
         $esUrgencias = true;
 
-        return view('incidencias.index', compact('incidencias', 'esUrgencias'));
+        return view('incidencias.index', compact('incidencias', 'esUrgencias', 'urgenciasActivas'));
     }
 
     private function incidenciasQuery(): Builder
@@ -535,13 +537,15 @@ class IncidenciaController extends Controller
         if ($esProfesor) {
             $courseIds = $asignaciones->pluck('curso_id')->unique()->all();
             $sectionIds = $asignaciones->pluck('seccion_id')->unique()->all();
-            $cursosQuery->whereIn('id', $courseIds);
-            $seccionesQuery->whereIn('id', $sectionIds);
-            $estudiantesQuery->whereIn('seccion_id', $sectionIds);
-            $sectionCourseIds = $asignaciones
-                ->groupBy('seccion_id')
-                ->map(fn ($rows) => $rows->pluck('curso_id')->map(fn ($id) => (string) $id)->all())
-                ->all();
+            if ($asignaciones->isNotEmpty()) {
+                $cursosQuery->whereIn('id', $courseIds);
+                $seccionesQuery->whereIn('id', $sectionIds);
+                $estudiantesQuery->whereIn('seccion_id', $sectionIds);
+                $sectionCourseIds = $asignaciones
+                    ->groupBy('seccion_id')
+                    ->map(fn ($rows) => $rows->pluck('curso_id')->map(fn ($id) => (string) $id)->all())
+                    ->all();
+            }
         }
 
         return [
@@ -559,16 +563,21 @@ class IncidenciaController extends Controller
         $courseId = $request->input('curso_id');
         $courseIdForRule = is_numeric($courseId) ? (int) $courseId : 0;
         $esProfesor = $user->rol?->nombre_rol === 'Profesor';
-        $courseRule = $esProfesor
-            ? Rule::exists('asignaciones_docentes', 'curso_id')
-                ->where(fn ($query) => $query->where('usuario_id', $user->getKey()))
-            : Rule::exists('cursos', 'id');
-        $sectionRule = $esProfesor
-            ? Rule::exists('asignaciones_docentes', 'seccion_id')
+        $asignaciones = $esProfesor
+            ? $user->asignacionesDocentes()->get(['curso_id', 'seccion_id'])
+            : collect();
+
+        if ($esProfesor && $asignaciones->isNotEmpty()) {
+            $courseRule = Rule::exists('asignaciones_docentes', 'curso_id')
+                ->where(fn ($query) => $query->where('usuario_id', $user->getKey()));
+            $sectionRule = Rule::exists('asignaciones_docentes', 'seccion_id')
                 ->where(fn ($query) => $query
                     ->where('usuario_id', $user->getKey())
-                    ->where('curso_id', $courseIdForRule))
-            : Rule::exists('secciones', 'id');
+                    ->where('curso_id', $courseIdForRule));
+        } else {
+            $courseRule = Rule::exists('cursos', 'id');
+            $sectionRule = Rule::exists('secciones', 'id');
+        }
 
         $datos = $request->validate([
             'curso_id' => ['required', 'integer', $courseRule],

@@ -11,6 +11,11 @@
     @endphp
 
     <section class="row g-3 mt-1" aria-label="Resumen de incidencias en números">
+        @if ($propias && empty($seleccionProfesor))
+            <div class="col-12">
+                <p class="text-secondary small mb-0">Las tarjetas estarán en cero hasta completar grado, sección y curso.</p>
+            </div>
+        @endif
         {{-- 1. Total registradas --}}
         <div class="col-6 col-lg-3">
             <div class="card shadow-sm border-0 border-start border-4 border-primary h-100">

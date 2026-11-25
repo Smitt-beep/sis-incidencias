@@ -36,16 +36,15 @@
                             @error('nombre') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         </div>
                         <div class="col-md-3">
-                            <label for="dni" class="form-label">DNI</label>
+                            <label for="dni" class="form-label">Documento de identidad</label>
                             <input
                                 type="text"
                                 name="dni"
                                 id="dni"
                                 value="{{ old('dni') }}"
                                 class="form-control @error('dni') is-invalid @enderror"
-                                inputmode="numeric"
-                                pattern="[0-9]{8}"
-                                maxlength="8"
+                                minlength="6"
+                                maxlength="20"
                                 required
                             >
                             @error('dni') <div class="invalid-feedback">{{ $message }}</div> @enderror
@@ -134,6 +133,11 @@
                             <td>{{ $estudiante->seccion?->seccion }}</td>
                             <td>
                                 <div class="dropdown">
+                                    @if ($rol === 'Profesor')
+                                        <a class="btn btn-sm btn-outline-secondary mb-1" href="{{ route('estudiantes.edit', $estudiante) }}">
+                                            Editar
+                                        </a>
+                                    @endif
                                     <button
                                         class="btn btn-sm btn-outline-primary dropdown-toggle"
                                         type="button"

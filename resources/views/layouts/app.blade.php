@@ -68,18 +68,19 @@
 
                     @if ($rol === 'Administrador')
                         <a class="nav-link {{ request()->routeIs('usuarios.*') ? 'active' : 'text-dark' }}" href="{{ route('usuarios.index') }}">Usuarios</a>
-                        <a class="nav-link {{ request()->routeIs('secciones.*') ? 'active' : 'text-dark' }}" href="{{ route('secciones.index') }}">Grados</a>
                         <a class="nav-link {{ request()->routeIs('incidencias.*') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.index') }}">Incidencias</a>
+                        <a class="nav-link {{ request()->routeIs('secciones.*') ? 'active' : 'text-dark' }}" href="{{ route('secciones.index') }}">Grado</a>
+                        <a class="nav-link {{ request()->routeIs('reporte-profesional.*') ? 'active' : 'text-dark' }}" href="{{ route('reporte-profesional.index') }}">Reporte Profesional</a>
                     @elseif ($rol === 'Profesor')
                         <a class="nav-link {{ request()->routeIs('incidencias.*') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.index') }}">Incidencias</a>
                         <a class="nav-link {{ request()->routeIs('estudiantes.*') ? 'active' : 'text-dark' }}" href="{{ route('estudiantes.index') }}">Alumnos</a>
+                        <a class="nav-link {{ request()->routeIs('reporte-profesional.*') ? 'active' : 'text-dark' }}" href="{{ route('reporte-profesional.index') }}">Reporte Profesional</a>
                     @elseif (in_array($rol, ['Directora', 'Subdirector'], true))
+                        <a class="nav-link {{ request()->routeIs('incidencias.*') && ! request()->routeIs('incidencias.urgencias') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.index') }}">Incidencias</a>
+                        <a class="nav-link {{ request()->routeIs('secciones.*') ? 'active' : 'text-dark' }}" href="{{ route('secciones.index') }}">Grado</a>
+                        <a class="nav-link {{ request()->routeIs('reporte-profesional.*') ? 'active' : 'text-dark' }}" href="{{ route('reporte-profesional.index') }}">Reporte Profesional</a>
                         <a class="nav-link {{ request()->routeIs('estudiantes.*') ? 'active' : 'text-dark' }}" href="{{ route('estudiantes.index') }}">Alumnos</a>
-                        <a class="nav-link {{ request()->routeIs('secciones.*') ? 'active' : 'text-dark' }}" href="{{ route('secciones.index') }}">Grados</a>
-                        @if ($rol === 'Directora' || $rol === 'Subdirector')
-                            <a class="nav-link {{ request()->routeIs('incidencias.urgencias') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.urgencias') }}">Urgencias</a>
-                            <a class="nav-link {{ request()->routeIs('incidencias.index') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.index') }}">Todas las incidencias</a>
-                        @endif
+                        <a class="nav-link {{ request()->routeIs('incidencias.urgencias') ? 'active' : 'text-dark' }}" href="{{ route('incidencias.urgencias') }}">Urgencias</a>
                     @endif
                 </nav>
             </div>

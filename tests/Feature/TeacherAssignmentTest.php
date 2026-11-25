@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AsignacionDocente;
 use App\Models\Curso;
+use App\Models\Estudiante;
 use App\Models\Rol;
 use App\Models\Seccion;
 use App\Models\User;
@@ -163,63 +164,38 @@ class TeacherAssignmentTest extends TestCase
         ]);
     }
 
-    public function test_public_registration_selects_base_course_and_assigns_it_to_all_sections_on_approval(): void
+    public function test_public_registration_does_not_request_academic_context_and_approval_does_not_assign_sections(): void
     {
-        $cursoBase = Curso::create(['nombre' => 'Comunicación']);
-        $cursoTaller = Curso::create(['nombre' => 'Comunicación (Taller)']);
-        $seccionA = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
-        $seccionB = Seccion::create(['grado' => '1.º', 'seccion' => 'B']);
-        Seccion::create(['grado' => '2.º', 'seccion' => 'A']);
+        Curso::create(['nombre' => 'Comunicación']);
+        Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
 
         $this->get(route('register'))
             ->assertOk()
-            ->assertSee($cursoBase->nombre)
-            ->assertDontSee($cursoTaller->nombre);
+            ->assertDontSee('name="grado"', false)
+            ->assertDontSee('name="curso_registro_id"', false);
 
         $registrationData = [
             'name' => 'Profesor Registrado',
             'email' => 'registro@example.test',
             'dni' => '23456789',
-            'grado' => '1.º',
             'password' => 'clave-segura',
             'password_confirmation' => 'clave-segura',
         ];
 
-        $this->from(route('register'))
-            ->post(route('register.store'), $registrationData + [
-                'curso_registro_id' => $cursoTaller->id,
-            ])
-            ->assertRedirect(route('register'))
-            ->assertSessionHasErrors('curso_registro_id');
-
-        $this->post(route('register.store'), $registrationData + [
-            'curso_registro_id' => $cursoBase->id,
-        ])->assertRedirect(route('login'))
+        $this->post(route('register.store'), $registrationData)
+            ->assertRedirect(route('login'))
             ->assertSessionHas('success');
 
         $profesor = User::where('dni', '23456789')->firstOrFail();
         $this->assertDatabaseHas('users', [
             'id' => $profesor->id,
-            'grado_registro' => '1.º',
-            'curso_registro_id' => $cursoBase->id,
+            'estado_aprobacion' => 'Pendiente',
         ]);
 
         $this->post(route('usuarios.aprobar', $profesor))
             ->assertSessionHas('success');
 
-        $this->assertDatabaseCount('asignaciones_docentes', 2);
-        foreach ([$seccionA, $seccionB] as $seccion) {
-            $this->assertDatabaseHas('asignaciones_docentes', [
-                'usuario_id' => $profesor->id,
-                'curso_id' => $cursoBase->id,
-                'seccion_id' => $seccion->id,
-            ]);
-            $this->assertDatabaseMissing('asignaciones_docentes', [
-                'usuario_id' => $profesor->id,
-                'curso_id' => $cursoTaller->id,
-                'seccion_id' => $seccion->id,
-            ]);
-        }
+        $this->assertDatabaseCount('asignaciones_docentes', 0);
     }
 
     public function test_assignment_rejects_sections_outside_the_selected_grades(): void
@@ -445,6 +421,48 @@ class TeacherAssignmentTest extends TestCase
         $this->get(route('estudiantes.index'))
             ->assertSee('Alumno Nuevo')
             ->assertDontSee('Alumno de otra sección');
+    }
+
+    public function test_professor_can_register_and_update_foreign_student_document(): void
+    {
+        $seccion = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
+        $profesor = User::create([
+            'name' => 'Profesor',
+            'email' => 'profesor-ce@example.test',
+            'dni' => '87654321',
+            'password' => 'clave-segura',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ]);
+
+        $this->post(route('estudiantes.store'), [
+            'dni' => 'CE-123456',
+            'nombre' => 'Estudiante Extranjero',
+            'seccion_id' => $seccion->id,
+        ])
+            ->assertRedirect(route('estudiantes.index'))
+            ->assertSessionHas('success');
+
+        $estudiante = Estudiante::where('dni', 'CE-123456')->firstOrFail();
+
+        $this->put(route('estudiantes.update', $estudiante), [
+            'dni' => 'X12345678',
+            'nombre' => 'Estudiante Extranjero Actualizado',
+            'seccion_id' => $seccion->id,
+        ])
+            ->assertRedirect(route('estudiantes.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('estudiantes', [
+            'id' => $estudiante->id,
+            'dni' => 'X12345678',
+            'nombre' => 'Estudiante Extranjero Actualizado',
+        ]);
     }
 
     public function test_professor_cannot_add_student_to_unassigned_section(): void
@@ -763,14 +781,268 @@ class TeacherAssignmentTest extends TestCase
         $this->withSession([
             'usuario_id' => $profesor->id,
             'usuario_rol' => 'Profesor',
-        ])->get(route('dashboard'))
+        ])->get(route('dashboard').'?grado='.urlencode($seccion->grado).'&seccion_id='.$seccion->id.'&curso_id='.$curso->id)
             ->assertOk()
-            ->assertSee('grafico-gravedad-grado-1')
-            ->assertSee('grafico-gravedad-grado-5')
+            ->assertSee('Selecciona tu contexto')
+            ->assertDontSee('grafico-gravedad-grado-1')
             ->assertSee('"gravedadPorGrado":' . json_encode($gravedadPorGradoProfesor), false)
             ->assertSee('"semana":{"labels":' . json_encode($labelsSemana) . ',"valores":' . json_encode($valoresSemana), false)
             ->assertSee('"mes":{"labels":' . json_encode($labelsMes) . ',"valores":' . json_encode($valoresMes), false)
             ->assertDontSee('"labels":["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]', false);
+    }
+
+    public function test_professor_dashboard_starts_at_zero_without_complete_selection(): void
+    {
+        $profesor = User::create([
+            'name' => 'Profesor Sin Contexto',
+            'email' => 'profesor.cero@example.test',
+            'dni' => '44445555',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('Selecciona grado, sección y curso para visualizar tus estadísticas')
+            ->assertSee('Selecciona tu contexto')
+            ->assertSee('name="grado"', false)
+            ->assertSee('name="seccion_id"', false)
+            ->assertSee('name="curso_id"', false)
+            ->assertDontSee('id="grafico-incidencias"', false)
+            ->assertSee('Las tarjetas estarán en cero', false)
+            ->assertSee('>0</div>', false);
+    }
+
+    public function test_professor_professional_report_supports_multiple_sections_and_excludes_reserved_actas(): void
+    {
+        $curso = Curso::create(['nombre' => 'Comunicación']);
+        $seccionA = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
+        $seccionB = Seccion::create(['grado' => '1.º', 'seccion' => 'B']);
+        $profesor = User::create([
+            'name' => 'Profesor Reporte',
+            'email' => 'profesor.reporte@example.test',
+            'dni' => '77778888',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        AsignacionDocente::create([
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'seccion_id' => $seccionA->id,
+        ]);
+        AsignacionDocente::create([
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'seccion_id' => $seccionB->id,
+        ]);
+
+        $estudianteA = \DB::table('estudiantes')->insertGetId([
+            'dni' => '88889999',
+            'nombre' => 'Alumno A',
+            'seccion_id' => $seccionA->id,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Leve']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+
+        \DB::table('incidencias')->insert([
+            [
+                'estudiante_id' => $estudianteA,
+                'usuario_id' => $profesor->id,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '09:00:00',
+                'descripcion' => 'Incidencia visible',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => false,
+            ],
+            [
+                'estudiante_id' => $estudianteA,
+                'usuario_id' => $profesor->id,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '10:00:00',
+                'descripcion' => 'Acta reservada',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => true,
+            ],
+        ]);
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])
+            ->post(route('reporte-profesional.generar'), [
+                'grado' => '1.º',
+                'curso_id' => $curso->id,
+                'secciones' => [$seccionA->id, $seccionB->id],
+            ])
+            ->assertOk()
+            ->assertSee('Reporte Profesional')
+            ->assertSee('data-row-submit', false)
+            ->assertSee('data-panel-submit', false)
+            ->assertSee('reporte-profesional-resultados', false)
+            ->assertSee('scrollIntoView', false)
+            ->assertSee('Sección A')
+            ->assertSee('Sección B')
+            ->assertSee('INSTITUCIÓN EDUCATIVA TUNGASUCA')
+            ->assertSee('Imprimir / Guardar PDF')
+            ->assertSee('Comparativa por sección')
+            ->assertSee('Estado de incidencias')
+            ->assertSee('Evolución mensual')
+            ->assertDontSee('Acta reservada');
+    }
+
+    public function test_directiva_can_generate_institutional_report_from_grades(): void
+    {
+        $directora = User::create([
+            'name' => 'Directora Institucional',
+            'email' => 'directora.reporte@example.test',
+            'dni' => '10101010',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Directora')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $curso = Curso::create(['nombre' => 'Matemática']);
+        $seccion = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
+        $estudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '20202020',
+            'nombre' => 'Alumno Directivo',
+            'seccion_id' => $seccion->id,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Grave']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+        \DB::table('incidencias')->insert([
+            'estudiante_id' => $estudianteId,
+            'usuario_id' => $directora->id,
+            'curso_id' => $curso->id,
+            'fecha' => now()->toDateString(),
+            'hora' => '08:30:00',
+            'descripcion' => 'Descripción privada reservada',
+            'gravedad_id' => $gravedadId,
+            'estado_id' => $estadoId,
+            'es_reservada' => true,
+        ]);
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])
+            ->post(route('reporte-profesional.institucional.generar'), [
+                'grado' => 'todos',
+                'curso_id' => $curso->id,
+                'secciones' => [$seccion->id],
+                'anio' => now()->year,
+            ])
+            ->assertOk()
+            ->assertSee('Generar reporte')
+            ->assertSee('REPORTE PROFESIONAL INSTITUCIONAL')
+            ->assertSee('INCIDENCIAS POR GRADO')
+            ->assertSee('Desglose por curso')
+            ->assertSee('Curso')
+            ->assertSee('Total')
+            ->assertSee('Estado de incidencias')
+            ->assertSee('Imprimir / Guardar PDF')
+            ->assertDontSee('Nueva sección')
+            ->assertDontSee('Editar secciones')
+            ->assertDontSee('Descripción privada reservada');
+    }
+
+    public function test_professor_professional_report_rejects_sections_from_another_grade(): void
+    {
+        $curso = Curso::create(['nombre' => 'Ciencia']);
+        $seccionPrimero = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
+        $seccionSegundo = Seccion::create(['grado' => '2.º', 'seccion' => 'B']);
+        $profesor = User::create([
+            'name' => 'Profesor Validación',
+            'email' => 'profesor.validacion@example.test',
+            'dni' => '99990000',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        AsignacionDocente::create([
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'seccion_id' => $seccionPrimero->id,
+        ]);
+
+        $this->from(route('reporte-profesional.index'))
+            ->withSession([
+                'usuario_id' => $profesor->id,
+                'usuario_rol' => 'Profesor',
+            ])
+            ->post(route('reporte-profesional.generar'), [
+                'grado' => '1.º',
+                'curso_id' => $curso->id,
+                'secciones' => [$seccionSegundo->id],
+            ])
+            ->assertRedirect(route('reporte-profesional.index'))
+            ->assertSessionHasErrors('secciones');
+    }
+
+    public function test_professor_dashboard_excludes_reserved_actas_and_requires_matching_context(): void
+    {
+        $curso = Curso::create(['nombre' => 'Matemática']);
+        $seccion = Seccion::create(['grado' => '2.º', 'seccion' => 'B']);
+        $otraSeccion = Seccion::create(['grado' => '2.º', 'seccion' => 'C']);
+        $estudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '55556666',
+            'nombre' => 'Alumno Filtro',
+            'seccion_id' => $seccion->id,
+        ]);
+        $profesor = User::create([
+            'name' => 'Profesor Filtrado',
+            'email' => 'profesor.filtro@example.test',
+            'dni' => '66667777',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Grave']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+
+        foreach ([false, true] as $reservada) {
+            \DB::table('incidencias')->insert([
+                'estudiante_id' => $estudianteId,
+                'usuario_id' => $profesor->id,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '09:00:00',
+                'descripcion' => 'Filtro dashboard',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => $reservada,
+            ]);
+        }
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('dashboard').'?grado='.urlencode($seccion->grado).'&seccion_id='.$seccion->id.'&curso_id='.$curso->id)
+            ->assertOk()
+            ->assertSee('id="grafico-incidencias"', false)
+            ->assertSee('"seleccionado":true', false)
+            ->assertSee('"total":1', false);
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('dashboard').'?grado='.urlencode($otraSeccion->grado).'&seccion_id='.$otraSeccion->id.'&curso_id='.$curso->id)
+            ->assertOk()
+            ->assertSee('"seleccionado":true', false)
+            ->assertSee('"total":0', false);
     }
 
     public function test_incidence_search_filters_by_student_name(): void
@@ -1196,5 +1468,169 @@ class TeacherAssignmentTest extends TestCase
 
         $this->get(route('estudiantes.reporte.seleccionar', $otroEstudiante))
             ->assertNotFound();
+    }
+
+    public function test_urgencies_show_the_active_count_spanish_pagination_and_privacy_safe_rows(): void
+    {
+        $curso = Curso::create(['nombre' => 'Comunicación']);
+        $seccion = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
+        $estudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '11112222',
+            'nombre' => 'Estudiante de urgencia',
+            'seccion_id' => $seccion->id,
+        ]);
+        $gravedadGrave = \DB::table('gravedades')->insertGetId(['nombre' => 'Grave']);
+        $gravedadLeve = \DB::table('gravedades')->insertGetId(['nombre' => 'Leve']);
+        $estadoPendiente = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+        $estadoFinalizado = \DB::table('estados')->insertGetId(['nombre' => 'Finalizado']);
+
+        $incidenciaNormalId = null;
+        for ($indice = 0; $indice < 16; $indice++) {
+            $incidenciaId = \DB::table('incidencias')->insertGetId([
+                'estudiante_id' => $estudianteId,
+                'usuario_id' => 1,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => sprintf('08:%02d:00', $indice),
+                'descripcion' => $indice === 0 ? 'DETALLE CONFIDENCIAL DEL ACTA' : 'Incidencia activa',
+                'gravedad_id' => $gravedadGrave,
+                'estado_id' => $estadoPendiente,
+                'es_reservada' => $indice === 0,
+            ]);
+
+            if ($indice === 1) {
+                $incidenciaNormalId = $incidenciaId;
+            }
+        }
+
+        \DB::table('incidencias')->insert([
+            [
+                'estudiante_id' => $estudianteId,
+                'usuario_id' => 1,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '09:00:00',
+                'descripcion' => 'Incidencia grave finalizada',
+                'gravedad_id' => $gravedadGrave,
+                'estado_id' => $estadoFinalizado,
+            ],
+            [
+                'estudiante_id' => $estudianteId,
+                'usuario_id' => 1,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '10:00:00',
+                'descripcion' => 'Incidencia leve pendiente',
+                'gravedad_id' => $gravedadLeve,
+                'estado_id' => $estadoPendiente,
+            ],
+        ]);
+
+        $response = $this->get(route('incidencias.urgencias'));
+        $response
+            ->assertOk()
+            ->assertSee('16 urgencias activas')
+            ->assertSee('Mostrando 1 a 15 de 16 registros')
+            ->assertSee('Anterior')
+            ->assertSee('Siguiente')
+            ->assertSee('Grado / Sección')
+            ->assertSee('Fecha y hora')
+            ->assertSee('Acciones')
+            ->assertSee('Ver')
+            ->assertSee(route('incidencias.show', $incidenciaNormalId), false)
+            ->assertDontSee('DETALLE CONFIDENCIAL DEL ACTA')
+            ->assertDontSee('Incidencia grave finalizada')
+            ->assertDontSee('Incidencia leve pendiente')
+            ->assertDontSee('Motivo')
+            ->assertDontSee('Showing');
+
+        $this->assertMatchesRegularExpression(
+            '/<td class="urgencias-datetime">\s*<span class="urgencias-date">[\d\/]+<\/span>\s*<span class="urgencias-time">[^<]+<\/span>\s*<\/td>/',
+            $response->getContent()
+        );
+        $this->assertMatchesRegularExpression(
+            '/<td class="urgencias-actions-cell">\s*<div[^>]*class="[^"]*urgencias-actions[^"]*"[^>]*>.*?<\/div>\s*<\/td>/s',
+            $response->getContent()
+        );
+    }
+
+    public function test_empty_urgencies_show_zero_and_keep_the_acta_registration_action(): void
+    {
+        $directora = User::create([
+            'name' => 'Directora',
+            'email' => 'directora-urgencias@example.test',
+            'dni' => '87654320',
+            'password' => 'clave-segura',
+            'rol_id' => Rol::where('nombre_rol', 'Directora')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->get(route('incidencias.urgencias'))
+            ->assertOk()
+            ->assertSee('0 urgencias activas')
+            ->assertSee('No hay urgencias activas.')
+            ->assertSee('Mostrando 0 a 0 de 0 registros')
+            ->assertSee('+ Registrar acta')
+            ->assertSee(route('incidencias.acta.create'), false)
+            ->assertDontSee('Showing');
+
+        $this->get(route('incidencias.acta.create'))
+            ->assertOk()
+            ->assertSee('Registrar Acta de Incidencia');
+    }
+
+    public function test_directive_sidebar_has_only_urgencies_active_and_no_duplicate_all_incidences_link(): void
+    {
+        $curso = Curso::create(['nombre' => 'Comunicación']);
+        $seccion = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
+        $estudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '33334444',
+            'nombre' => 'Estudiante directivo',
+            'seccion_id' => $seccion->id,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Grave']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+        \DB::table('incidencias')->insert([
+            'estudiante_id' => $estudianteId,
+            'usuario_id' => 1,
+            'curso_id' => $curso->id,
+            'fecha' => now()->toDateString(),
+            'hora' => '08:15:00',
+            'descripcion' => 'Incidencia visible',
+            'gravedad_id' => $gravedadId,
+            'estado_id' => $estadoId,
+        ]);
+
+        foreach (['Directora', 'Subdirector'] as $indice => $rol) {
+            $usuario = User::create([
+                'name' => $rol,
+                'email' => strtolower($rol).'-sidebar@example.test',
+                'dni' => '8765432'.($indice + 1),
+                'password' => 'clave-segura',
+                'rol_id' => Rol::where('nombre_rol', $rol)->value('id'),
+                'estado_aprobacion' => 'Aprobado',
+                'activo' => true,
+            ]);
+
+            $response = $this->withSession([
+                'usuario_id' => $usuario->id,
+                'usuario_rol' => $rol,
+            ])->get(route('incidencias.urgencias'));
+            $response->assertOk()
+                ->assertSee('class="nav-link active" href="'.route('incidencias.urgencias').'"', false)
+                ->assertSee('class="nav-link text-dark" href="'.route('incidencias.index').'"', false)
+                ->assertSee('urgencias-table--directivo', false)
+                ->assertSee('Estudiante directivo')
+                ->assertSee('08:15')
+                ->assertDontSee('Todas las incidencias');
+
+            $this->assertMatchesRegularExpression(
+                '/<td class="urgencias-datetime">\s*<span class="urgencias-date">[\d\/]+<\/span>\s*<span class="urgencias-time">08:15<\/span>\s*<\/td>/',
+                $response->getContent()
+            );
+        }
     }
 }

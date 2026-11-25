@@ -17,6 +17,93 @@
     @endphp
 
     <div class="container">
+        @if ($rol === 'Profesor')
+            <section class="card shadow-sm border-0 mb-4" aria-labelledby="contexto-profesor-title">
+                <div class="card-body">
+                    <h2 class="h5 mb-1" id="contexto-profesor-title">Selecciona tu contexto</h2>
+                    <p class="text-secondary small mb-3">Elige grado, sección y curso para visualizar solamente tus incidencias.</p>
+                    <form method="GET" action="{{ route('dashboard') }}" class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label for="dashboard-grado" class="form-label">Grado</label>
+                            <select name="grado" id="dashboard-grado" class="form-select" required>
+                                <option value="">Seleccione un grado</option>
+                                @foreach ($grados as $grado)
+                                    <option value="{{ $grado }}" @selected(request('grado') === $grado)>{{ $grado }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="dashboard-seccion" class="form-label">Sección</label>
+                            <select name="seccion_id" id="dashboard-seccion" class="form-select" required>
+                                <option value="">Seleccione una sección</option>
+                                @foreach ($secciones as $seccion)
+                                    <option value="{{ $seccion->id }}" data-grado="{{ $seccion->grado }}" @selected((string) request('seccion_id') === (string) $seccion->id)>
+                                        {{ $seccion->grado }} - {{ $seccion->seccion }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="dashboard-curso" class="form-label">Curso</label>
+                            <select name="curso_id" id="dashboard-curso" class="form-select" required>
+                                <option value="">Seleccione un curso</option>
+                                @foreach ($cursos as $curso)
+                                    <option value="{{ $curso->id }}" @selected((string) request('curso_id') === (string) $curso->id)>
+                                        {{ $curso->nombre }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="col-12 d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">Aplicar</button>
+                            <a href="{{ route('dashboard') }}" class="btn btn-outline-secondary">Limpiar selección</a>
+                        </div>
+                    </form>
+                </div>
+            </section>
+            @if (!($graficos['seleccionado'] ?? false))
+                <div class="alert alert-info" role="status">
+                    Selecciona grado, sección y curso para visualizar tus estadísticas
+                </div>
+            @endif
+        @endif
+        @if ($rol === 'Profesor')
+            <script>
+                (() => {
+                    const gradoSelect = document.getElementById('dashboard-grado');
+                    const seccionSelect = document.getElementById('dashboard-seccion');
+                    if (!gradoSelect || !seccionSelect) {
+                        return;
+                    }
+
+                    const aplicarFiltroSecciones = () => {
+                        const grado = gradoSelect.value;
+                        let seccionVisible = false;
+
+                        Array.from(seccionSelect.options).forEach((option) => {
+                            if (!option.value) {
+                                option.hidden = false;
+                                return;
+                            }
+
+                            const coincide = !grado || option.dataset.grado === grado;
+                            option.hidden = !coincide;
+                            option.disabled = !coincide;
+                            if (coincide && option.selected) {
+                                seccionVisible = true;
+                            }
+                        });
+
+                        if (!seccionVisible && seccionSelect.selectedOptions.length) {
+                            seccionSelect.value = '';
+                        }
+                    };
+
+                    gradoSelect.addEventListener('change', aplicarFiltroSecciones);
+                    aplicarFiltroSecciones();
+                })();
+            </script>
+        @endif
         <div class="row">
             <div class="col-md-12">
                 <div class="card shadow-sm">
@@ -30,7 +117,7 @@
             </div>
         </div>
         @include('partials.tarjetas-resumen')  
-        @if ($graficos && ($graficos['tipo'] ?? null) !== 'admin')
+        @if ($graficos && ($graficos['tipo'] ?? null) === 'profesor' && ($graficos['seleccionado'] ?? false))
             <div class="row mt-4">
                 <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                     <h3 class="h5 mb-0">Mis incidencias registradas</h3>
@@ -66,7 +153,7 @@
         @endif
     </div>
 
-    @if ($graficos && ($graficos['tipo'] ?? null) !== 'admin')
+    @if ($graficos && ($graficos['tipo'] ?? null) === 'profesor' && ($graficos['seleccionado'] ?? false))
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
         <script>
             const datosDashboard = @json($graficos);
@@ -178,7 +265,7 @@
             </div>
 
             <div class="row g-3">
-                <div class="col-12">
+                <div class="col-12 d-none">
                     <div class="card h-100">
                         <div class="card-body">
                             <h3 class="h6 text-secondary mb-3">Incidencias Generales</h3>
@@ -186,7 +273,35 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-xl-6">
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h3 class="h6 text-secondary mb-3">Incidencias por grado</h3>
+                            <div class="row g-2">
+                                @foreach (['Primer grado', 'Segundo grado', 'Tercer grado', 'Cuarto grado', 'Quinto grado'] as $indice => $grado)
+                                    <div class="{{ $indice < 3 ? 'col-4' : 'col-6' }}">
+                                        <h4 class="small text-center mb-1">{{ $grado }}</h4>
+                                        <canvas
+                                            id="grafico-gravedad-grado-{{ $indice + 1 }}"
+                                            height="150"
+                                            role="img"
+                                            aria-label="Incidencias por gravedad de {{ $grado }}"
+                                        ></canvas>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h3 class="h6 text-secondary mb-3">Incidencias por gravedad</h3>
+                            <canvas id="grafico-admin-gravedad" height="220" role="img" aria-label="Incidencias por nivel de gravedad"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12">
                     <div class="card h-100">
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -209,14 +324,6 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-lg-6 mx-auto">
-                    <div class="card h-100">
-                        <div class="card-body">
-                            <h3 class="h6 text-secondary mb-3">Incidencias por gravedad</h3>
-                            <canvas id="grafico-admin-gravedad" height="220" role="img" aria-label="Incidencias por nivel de gravedad"></canvas>
-                        </div>
-                    </div>
-                </div>
             </div>
         </section>
 
@@ -230,6 +337,28 @@
             };
             let periodoDashboardAdmin = 'semana';
             let gradoDashboardAdmin = 0;
+
+            const pluginValorCurso = {
+                id: 'valorCurso',
+                afterDatasetsDraw(chart) {
+                    if (chart.canvas.id !== 'grafico-admin-curso') {
+                        return;
+                    }
+                    const dataset = chart.data.datasets[0];
+                    const meta = chart.getDatasetMeta(0);
+                    const contexto = chart.ctx;
+                    contexto.save();
+                    contexto.fillStyle = '#172B4D';
+                    contexto.font = '700 12px sans-serif';
+                    contexto.textAlign = 'left';
+                    contexto.textBaseline = 'middle';
+                    meta.data.forEach((barra, indice) => {
+                        const valor = dataset.data[indice] ?? 0;
+                        contexto.fillText(String(valor), barra.x + 8, barra.y);
+                    });
+                    contexto.restore();
+                },
+            };
 
             const graficoAdminCurso = new Chart(document.getElementById('grafico-admin-curso'), {
                 type: 'bar',
@@ -266,6 +395,7 @@
                         },
                     },
                 },
+                plugins: [pluginValorCurso],
             });
             const contenedorGraficoAdminCurso = document.getElementById('grafico-admin-curso-contenedor');
             const mensajeGraficoAdminCursoVacio = document.getElementById('grafico-admin-curso-vacio');
@@ -395,28 +525,7 @@
         </script>
     @endif
 
-    @if ($graficos)
-        <section class="container mb-4" aria-labelledby="dashboard-grados-title">
-            <h2 class="h4 mb-3" id="dashboard-grados-title">Incidencias por grado</h2>
-            <div class="row g-3">
-                @foreach (['Primer grado', 'Segundo grado', 'Tercer grado', 'Cuarto grado', 'Quinto grado'] as $indice => $grado)
-                    <div class="col-6 col-md-4 col-xl">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h3 class="h6 text-center mb-2">{{ $grado }}</h3>
-                                <canvas
-                                    id="grafico-gravedad-grado-{{ $indice + 1 }}"
-                                    height="170"
-                                    role="img"
-                                    aria-label="Incidencias por gravedad de {{ $grado }}"
-                                ></canvas>
-                            </div>
-                        </div>
-                    </div>
-                @endforeach
-            </div>
-        </section>
-
+    @if (isset($graficos['tipo']) && $graficos['tipo'] === 'admin')
         <script>
             const datosDashboardGrados = @json($graficos);
             const etiquetasGravedadDashboard = ['Leve', 'Intermedia', 'Grave'];

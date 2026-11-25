@@ -268,42 +268,6 @@
                 </div>
 
                 <div>
-                    <label for="grado" class="auth-label">Grado</label>
-                    <select name="grado"
-                            id="grado"
-                            class="form-select @error('grado') is-invalid @enderror"
-                            required>
-                        <option value="">Seleccione un grado</option>
-                        @foreach ($grados as $grado)
-                            <option value="{{ $grado }}" {{ old('grado') == $grado ? 'selected' : '' }}>
-                                {{ $grado }}
-                            </option>
-                        @endforeach
-                    </select>
-                    @error('grado')
-                        <span class="auth-error">{{ $message }}</span>
-                    @enderror
-                </div>
-
-                <div>
-                    <label for="curso_registro_id" class="auth-label">Curso</label>
-                    <select name="curso_registro_id"
-                            id="curso_registro_id"
-                            class="form-select @error('curso_registro_id') is-invalid @enderror"
-                            required>
-                        <option value="">Seleccione un curso</option>
-                        @foreach ($cursos as $curso)
-                            <option value="{{ $curso->id }}" {{ old('curso_registro_id') == $curso->id ? 'selected' : '' }}>
-                                {{ $curso->nombre }}
-                            </option>
-                        @endforeach
-                    </select>
-                    @error('curso_registro_id')
-                        <span class="auth-error">{{ $message }}</span>
-                    @enderror
-                </div>
-
-                <div>
                     <span class="auth-label">Cargo / Rol</span>
                     <div class="auth-role">Profesor</div>
                 </div>

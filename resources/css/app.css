@@ -353,6 +353,168 @@ body.panel-body {
     color: var(--color-white);
 }
 
+.urgencias-active-count {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.8rem;
+    padding: 0.2rem 0.7rem;
+    border: 1px solid #F2B8B8;
+    border-radius: 999px;
+    background: #FCEEEE;
+    color: #A83232;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.urgencias-table-wrap {
+    width: 100%;
+    overflow-x: hidden;
+}
+
+.urgencias-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+    font-size: 0.9rem;
+}
+
+.urgencias-table .urgencias-col-id {
+    width: 6%;
+}
+
+.urgencias-table .urgencias-col-student {
+    width: 21%;
+}
+
+.urgencias-table .urgencias-col-section {
+    width: 18%;
+}
+
+.urgencias-table .urgencias-col-course {
+    width: 16%;
+}
+
+.urgencias-table .urgencias-col-datetime {
+    width: 17%;
+}
+
+.urgencias-table .urgencias-col-actions {
+    width: 22%;
+}
+
+.urgencias-table--directivo .urgencias-col-id {
+    width: 6%;
+}
+
+.urgencias-table--directivo .urgencias-col-student {
+    width: 20%;
+}
+
+.urgencias-table--directivo .urgencias-col-section {
+    width: 17%;
+}
+
+.urgencias-table--directivo .urgencias-col-course {
+    width: 14%;
+}
+
+.urgencias-table--directivo .urgencias-col-datetime {
+    width: 17%;
+}
+
+.urgencias-table--directivo .urgencias-col-actions {
+    width: 26%;
+}
+
+.urgencias-table--directivo .urgencias-datetime {
+    color: #1E293B !important;
+    white-space: normal;
+}
+
+.urgencias-table--directivo .urgencias-date,
+.urgencias-table--directivo .urgencias-time {
+    white-space: nowrap;
+}
+
+.urgencias-table--directivo .urgencias-time {
+    color: #334155 !important;
+}
+
+.urgencias-table--directivo .urgencias-actions {
+    column-gap: 0.35rem;
+    row-gap: 0.35rem;
+}
+
+.urgencias-table--directivo .urgencias-actions > a,
+.urgencias-table--directivo .urgencias-actions > form {
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.urgencias-table--directivo .urgencias-actions .btn {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.urgencias-table th,
+.urgencias-table td {
+    box-sizing: border-box;
+    padding-right: 0.55rem;
+    padding-left: 0.55rem;
+    min-width: 0;
+}
+
+.urgencias-table .urgencias-truncate {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.urgencias-datetime {
+    color: #1E293B !important;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.urgencias-date,
+.urgencias-time {
+    display: block;
+    line-height: 1.35;
+}
+
+.urgencias-time {
+    color: #334155;
+}
+
+.urgencias-actions-cell {
+    overflow: visible;
+}
+
+.urgencias-actions {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.urgencias-actions > a,
+.urgencias-actions > form {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.urgencias-actions form {
+    margin: 0;
+}
+
+.urgencias-actions .btn {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
 .panel-main .page-link:focus {
     box-shadow: 0 0 0 0.2rem rgba(22, 137, 212, 0.16);
 }
@@ -387,6 +549,91 @@ body.panel-body {
 
     .panel-navbar .container-fluid {
         flex-wrap: wrap;
+    }
+
+    .urgencias-table {
+        font-size: 0.72rem;
+    }
+
+    .urgencias-table th,
+    .urgencias-table td {
+        padding-right: 0.22rem;
+        padding-left: 0.22rem;
+    }
+
+    .urgencias-table .urgencias-col-id {
+        width: 7%;
+    }
+
+    .urgencias-table .urgencias-col-student {
+        width: 20%;
+    }
+
+    .urgencias-table .urgencias-col-section {
+        width: 18%;
+    }
+
+    .urgencias-table .urgencias-col-course {
+        width: 14%;
+    }
+
+    .urgencias-table .urgencias-col-datetime {
+        width: 16%;
+    }
+
+    .urgencias-table .urgencias-col-actions {
+        width: 25%;
+    }
+
+    .urgencias-table--directivo .urgencias-col-id {
+        width: 7%;
+    }
+
+    .urgencias-table--directivo .urgencias-col-student {
+        width: 19%;
+    }
+
+    .urgencias-table--directivo .urgencias-col-section {
+        width: 17%;
+    }
+
+    .urgencias-table--directivo .urgencias-col-course {
+        width: 13%;
+    }
+
+    .urgencias-table--directivo .urgencias-col-datetime {
+        width: 16%;
+    }
+
+    .urgencias-table--directivo .urgencias-col-actions {
+        width: 28%;
+    }
+
+    .urgencias-actions {
+        gap: 0.2rem !important;
+    }
+
+    .urgencias-actions > a,
+    .urgencias-actions > form {
+        flex-basis: 100%;
+        width: 100%;
+    }
+
+    .urgencias-actions .btn {
+        width: 100%;
+        padding: 0.2rem 0.3rem;
+        font-size: 0.65rem;
+    }
+
+    .urgencias-table--directivo .urgencias-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .urgencias-table--directivo .urgencias-actions > a,
+    .urgencias-table--directivo .urgencias-actions > form,
+    .urgencias-table--directivo .urgencias-actions .btn {
+        width: 100%;
     }
 
     .panel-navbar .navbar-brand {

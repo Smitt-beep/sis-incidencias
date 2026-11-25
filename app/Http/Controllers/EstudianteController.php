@@ -23,6 +23,9 @@ class EstudianteController extends Controller
         $secciones = $rol === 'Profesor'
             ? $usuario->seccionesDocentes()->orderBy('grado')->orderBy('seccion')->get()
             : Seccion::query()->orderBy('grado')->orderBy('seccion')->get();
+        if ($rol === 'Profesor' && $secciones->isEmpty()) {
+            $secciones = Seccion::query()->orderBy('grado')->orderBy('seccion')->get();
+        }
         $query = Estudiante::with('seccion');
 
         if ($rol === 'Profesor') {
@@ -132,19 +135,31 @@ class EstudianteController extends Controller
     public function store(Request $request)
     {
         $profesor = User::findOrFail($request->session()->get('usuario_id'));
+        $seccionesAsignadas = $profesor->seccionesDocentes()->get();
+        $seccionIds = $seccionesAsignadas->isEmpty()
+            ? Seccion::query()->pluck('id')->all()
+            : $seccionesAsignadas->modelKeys();
 
         $datos = $request->validate([
-            'dni' => ['required', 'digits:8', 'unique:estudiantes,dni'],
+            'dni' => [
+                'required',
+                'string',
+                'min:6',
+                'max:20',
+                'regex:/^[A-Za-z0-9-]+$/',
+                'unique:estudiantes,dni',
+            ],
             'nombre' => ['required', 'string', 'max:255'],
             'seccion_id' => [
                 'required',
                 'integer',
-                Rule::exists('asignaciones_docentes', 'seccion_id')
-                    ->where(fn ($query) => $query->where('usuario_id', $profesor->getKey())),
+                Rule::in($seccionIds),
             ],
         ], [
             'dni.required' => 'El DNI del alumno es obligatorio.',
-            'dni.digits' => 'El DNI debe tener exactamente 8 números.',
+            'dni.regex' => 'El documento solo puede contener letras, números y guiones.',
+            'dni.min' => 'El documento debe tener al menos 6 caracteres.',
+            'dni.max' => 'El documento no puede tener más de 20 caracteres.',
             'dni.unique' => 'Ya existe un alumno registrado con ese DNI.',
             'nombre.required' => 'El nombre del alumno es obligatorio.',
             'seccion_id.required' => 'Seleccione una sección.',
@@ -163,10 +178,63 @@ class EstudianteController extends Controller
 
     public function edit(Estudiante $estudiante)
     {
+        $usuario = User::with('rol')->findOrFail(request()->session()->get('usuario_id'));
+        abort_unless($usuario->rol?->nombre_rol === 'Profesor', 403);
+
+        $seccionesAsignadas = $usuario->seccionesDocentes()->get();
+        $secciones = $seccionesAsignadas->isEmpty()
+            ? Seccion::query()->orderBy('grado')->orderBy('seccion')->get()
+            : Seccion::query()
+                ->whereIn('id', $seccionesAsignadas->modelKeys())
+                ->orderBy('grado')
+                ->orderBy('seccion')
+                ->get();
+
+        abort_unless($secciones->contains('id', $estudiante->seccion_id), 404);
+
+        return view('estudiantes.edit', compact('estudiante', 'secciones'));
     }
 
     public function update(Request $request, Estudiante $estudiante)
     {
+        $profesor = User::findOrFail($request->session()->get('usuario_id'));
+        $seccionesAsignadas = $profesor->seccionesDocentes()->get();
+        $seccionIds = $seccionesAsignadas->isEmpty()
+            ? Seccion::query()->pluck('id')->all()
+            : $seccionesAsignadas->modelKeys();
+
+        abort_unless(in_array((int) $estudiante->seccion_id, array_map('intval', $seccionIds), true), 404);
+
+        $datos = $request->validate([
+            'dni' => [
+                'required',
+                'string',
+                'min:6',
+                'max:20',
+                'regex:/^[A-Za-z0-9-]+$/',
+                Rule::unique('estudiantes', 'dni')->ignore($estudiante->id),
+            ],
+            'nombre' => ['required', 'string', 'max:255'],
+            'seccion_id' => [
+                'required',
+                'integer',
+                Rule::in($seccionIds),
+            ],
+        ], [
+            'dni.required' => 'El documento del alumno es obligatorio.',
+            'dni.regex' => 'El documento solo puede contener letras, números y guiones.',
+            'dni.min' => 'El documento debe tener al menos 6 caracteres.',
+            'dni.max' => 'El documento no puede tener más de 20 caracteres.',
+            'dni.unique' => 'Ya existe un alumno registrado con ese documento.',
+            'nombre.required' => 'El nombre del alumno es obligatorio.',
+            'seccion_id.required' => 'Seleccione una sección.',
+            'seccion_id.in' => 'La sección seleccionada no está asignada a su cuenta.',
+        ]);
+
+        $estudiante->update($datos);
+
+        return redirect()->route('estudiantes.index')
+            ->with('success', 'Alumno actualizado correctamente.');
     }
 
     public function destroy(Estudiante $estudiante)

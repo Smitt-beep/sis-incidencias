@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Incidencia;
+use App\Models\Seccion;
+use App\Models\Curso;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -101,19 +103,62 @@ class AuthController extends Controller
     {
         $usuario = User::with('rol')->findOrFail($request->session()->get('usuario_id'));
         $graficos = null;
+        $seleccionProfesor = null;
+        $grados = collect();
+        $secciones = collect();
+        $cursos = collect();
 
         if ($usuario->rol?->nombre_rol === 'Profesor') {
-            $graficos = $this->datosDashboardProfesor($usuario);
+            $seleccionProfesor = $this->contextoDashboardProfesor($request);
+            $grados = Seccion::query()->whereNotNull('grado')->distinct()->orderBy('grado')->pluck('grado');
+            $secciones = Seccion::query()->orderBy('grado')->orderBy('seccion')->get(['id', 'grado', 'seccion']);
+            $cursos = Curso::query()->orderBy('nombre')->get(['id', 'nombre']);
+            $graficos = $this->datosDashboardProfesor($usuario, $seleccionProfesor);
         } elseif (in_array($usuario->rol?->nombre_rol, ['Administrador', 'Directora', 'Subdirector'], true)) {
             $graficos = $this->datosDashboardAdmin();
         }
 
              // Tarjetas de resumen (números): las ven todos los roles con dashboard
         $tarjetas = in_array($usuario->rol?->nombre_rol, ['Profesor', 'Administrador', 'Directora', 'Subdirector'], true)
-            ? $this->tarjetasResumen($usuario)
+            ? $this->tarjetasResumen($usuario, $seleccionProfesor)
             : null;
 
-        return view('dashboard', compact('graficos', 'tarjetas'));
+        return view('dashboard', compact(
+            'graficos',
+            'tarjetas',
+            'seleccionProfesor',
+            'grados',
+            'secciones',
+            'cursos'
+        ));
+    }
+
+    private function contextoDashboardProfesor(Request $request): ?array
+    {
+        $grado = trim((string) $request->query('grado', ''));
+        $seccionId = $request->query('seccion_id');
+        $cursoId = $request->query('curso_id');
+
+        if ($grado === '' || !is_numeric($seccionId) || !is_numeric($cursoId)) {
+            return null;
+        }
+
+        $seccion = Seccion::query()->find((int) $seccionId);
+        $curso = Curso::query()->find((int) $cursoId);
+
+        if (
+            !$seccion
+            || !$curso
+            || $seccion->grado !== $grado
+        ) {
+            return null;
+        }
+
+        return [
+            'grado' => $grado,
+            'seccion_id' => $seccion->id,
+            'curso_id' => $curso->id,
+        ];
     }
 
     /**
@@ -123,13 +168,23 @@ class AuthController extends Controller
      *   (las actas reservadas suman como una más, solo como número).
      * Las incidencias eliminadas no se cuentan (SoftDeletes).
      */
-    private function tarjetasResumen(User $usuario): array
+    private function tarjetasResumen(User $usuario, ?array $contextoProfesor = null): array
     {
         $esProfesor = $usuario->rol?->nombre_rol === 'Profesor';
 
         // Consulta base según el rol
         $base = fn () => Incidencia::query()
-            ->when($esProfesor, fn ($consulta) => $consulta->where('usuario_id', $usuario->getKey()));
+            ->when($esProfesor, function ($consulta) use ($usuario, $contextoProfesor) {
+                if ($contextoProfesor === null) {
+                    return $consulta->whereRaw('1 = 0');
+                }
+
+                return $consulta
+                    ->where('usuario_id', $usuario->getKey())
+                    ->where('curso_id', $contextoProfesor['curso_id'])
+                    ->where('es_reservada', false)
+                    ->whereHas('estudiante', fn ($q) => $q->where('seccion_id', $contextoProfesor['seccion_id']));
+            });
 
         // Filtra por nombre de estado (sin importar mayúsculas)
         $conEstado = fn ($consulta, array $estados) => $consulta->whereHas(
@@ -180,19 +235,52 @@ class AuthController extends Controller
      * una vista semanal (por día) y una mensual (por semana del mes),
      * cada una con su desglose de gravedad (Leve/Intermedia/Grave).
      */
-    private function datosDashboardProfesor(User $usuario): array
+    private function datosDashboardProfesor(User $usuario, ?array $contexto): array
     {
         $hoy = Carbon::now();
+        $labelsSemana = ['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4'];
+        $labelsMes = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+        ];
+
+        if ($contexto === null) {
+            $incidenciasVacias = collect();
+
+            return [
+                'tipo' => 'profesor',
+                'seleccionado' => false,
+                'mensaje' => 'Selecciona grado, sección y curso para visualizar tus estadísticas',
+                'semana' => [
+                    'labels' => $labelsSemana,
+                    'valores' => array_fill(0, count($labelsSemana), 0),
+                    'gravedad' => $this->conteoPorGravedad($incidenciasVacias),
+                    'gravedadPorGrado' => $this->conteoGravedadPorGrado($incidenciasVacias),
+                ],
+                'mes' => [
+                    'labels' => $labelsMes,
+                    'valores' => array_fill(0, count($labelsMes), 0),
+                    'gravedad' => $this->conteoPorGravedad($incidenciasVacias),
+                    'gravedadPorGrado' => $this->conteoGravedadPorGrado($incidenciasVacias),
+                ],
+            ];
+        }
+
+        $consultaBase = fn () => Incidencia::query()
+            ->with([
+                'gravedad:id,nombre',
+                'estudiante.seccion:id,grado',
+            ])
+            ->where('usuario_id', $usuario->getKey())
+            ->where('curso_id', $contexto['curso_id'])
+            ->where('es_reservada', false)
+            ->whereHas('estudiante', fn ($q) => $q->where('seccion_id', $contexto['seccion_id']));
 
         // --- Mes actual, dividido en cuatro semanas ---
         $inicioMes = $hoy->copy()->startOfMonth();
         $finMes = $hoy->copy()->endOfMonth();
 
-        $incidenciasSemana = Incidencia::with([
-            'gravedad:id,nombre',
-            'estudiante.seccion:id,grado',
-        ])
-            ->where('usuario_id', $usuario->getKey())
+        $incidenciasSemana = $consultaBase()
             ->whereBetween('fecha', [$inicioMes->toDateString(), $finMes->toDateString()])
             ->get(['id', 'fecha', 'gravedad_id', 'estudiante_id']);
 
@@ -208,18 +296,10 @@ class AuthController extends Controller
         $inicioAnio = $hoy->copy()->startOfYear();
         $finAnio = $hoy->copy()->endOfYear();
 
-        $incidenciasAnio = Incidencia::with([
-            'gravedad:id,nombre',
-            'estudiante.seccion:id,grado',
-        ])
-            ->where('usuario_id', $usuario->getKey())
+        $incidenciasAnio = $consultaBase()
             ->whereBetween('fecha', [$inicioAnio->toDateString(), $finAnio->toDateString()])
             ->get(['id', 'fecha', 'gravedad_id', 'estudiante_id']);
 
-        $labelsMes = [
-            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-        ];
         $valoresMes = array_fill(0, count($labelsMes), 0);
 
         foreach ($incidenciasAnio as $incidencia) {
@@ -228,6 +308,8 @@ class AuthController extends Controller
         }
 
         return [
+            'tipo' => 'profesor',
+            'seleccionado' => true,
             'semana' => [
                 'labels' => $labelsSemana,
                 'valores' => $valoresSemana,
