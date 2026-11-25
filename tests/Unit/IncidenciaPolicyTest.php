@@ -38,7 +38,7 @@ class IncidenciaPolicyTest extends TestCase
         $this->assertTrue($policy->delete($administrator, $incident));
     }
 
-    public function test_director_can_view_and_delete_but_not_create_or_update(): void
+    public function test_director_can_view_update_and_delete_but_not_create(): void
     {
         $policy = new IncidenciaPolicy();
         $director = $this->userWithRole('Directora', 2);
@@ -47,11 +47,15 @@ class IncidenciaPolicyTest extends TestCase
         $this->assertTrue($policy->viewAny($director));
         $this->assertTrue($policy->view($director, $incident));
         $this->assertFalse($policy->create($director));
-        $this->assertFalse($policy->update($director, $incident));
+        $this->assertTrue($policy->update($director, $incident));
+        $this->assertTrue($policy->update($director, new Incidencia([
+            'usuario_id' => 10,
+            'es_reservada' => true,
+        ])));
         $this->assertTrue($policy->delete($director, $incident));
     }
 
-    public function test_subdirector_can_view_but_cannot_mutate_incidents(): void
+    public function test_subdirector_can_update_incidents_but_cannot_create_or_delete_them(): void
     {
         $policy = new IncidenciaPolicy();
         $subdirector = $this->userWithRole('Subdirector', 3);
@@ -60,8 +64,24 @@ class IncidenciaPolicyTest extends TestCase
         $this->assertTrue($policy->viewAny($subdirector));
         $this->assertTrue($policy->view($subdirector, $incident));
         $this->assertFalse($policy->create($subdirector));
-        $this->assertFalse($policy->update($subdirector, $incident));
+        $this->assertTrue($policy->update($subdirector, $incident));
+        $this->assertTrue($policy->update($subdirector, new Incidencia([
+            'usuario_id' => 10,
+            'es_reservada' => true,
+        ])));
         $this->assertFalse($policy->delete($subdirector, $incident));
+    }
+
+    public function test_administrator_cannot_update_reserved_incidents(): void
+    {
+        $policy = new IncidenciaPolicy();
+        $administrator = $this->userWithRole('Administrador', 1);
+        $reservedIncident = new Incidencia([
+            'usuario_id' => 10,
+            'es_reservada' => true,
+        ]);
+
+        $this->assertFalse($policy->update($administrator, $reservedIncident));
     }
 
     private function userWithRole(string $roleName, int $userId): User

@@ -47,7 +47,8 @@ class IncidenciaPolicy
             return $this->puedeGestionarActa($user);
         }
 
-        return $user->rol?->nombre_rol === 'Administrador'
+        return $this->puedeGestionarActa($user)
+            || $user->rol?->nombre_rol === 'Administrador'
             || $this->isOwnerProfessor($user, $incidencia);
     }
 
@@ -60,12 +61,10 @@ class IncidenciaPolicy
         return in_array($user->rol?->nombre_rol, ['Administrador', 'Directora'], true);
     }
 
-    /**
-     * Imprimir / descargar el acta: solo Directora y Subdirector, y solo si es reservada.
-     */
+    /** Imprimir / descargar actas existentes: solo Directora y Subdirector. */
     public function imprimirActa(User $user, Incidencia $incidencia): bool
     {
-        return $incidencia->es_reservada && $this->puedeGestionarActa($user);
+        return $this->puedeGestionarActa($user) && $incidencia->acta()->exists();
     }
 
     private function puedeGestionarActa(User $user): bool

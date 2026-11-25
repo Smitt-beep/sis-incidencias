@@ -119,10 +119,9 @@
                                     @unless ($contenidoReservado)
                                         <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 urgencias-actions">
                                             <a href="{{ route('incidencias.show', $incidencia) }}" class="btn btn-sm btn-outline-secondary">Ver</a>
-                                            @if ($incidencia->es_reservada && $puedeVerActa)
-                                                <a href="{{ route('incidencias.acta.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar acta</a>
-                                            @endif
-                                            @if (session('usuario_rol') === 'Administrador'
+                                            @if ($puedeVerActa)
+                                                <a href="{{ route('incidencias.acta.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar</a>
+                                            @elseif (session('usuario_rol') === 'Administrador'
                                                 || (session('usuario_rol') === 'Profesor' && (int) $incidencia->usuario_id === (int) session('usuario_id')))
                                                 <a href="{{ route('incidencias.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar</a>
                                             @endif
@@ -137,6 +136,7 @@
                                     @endunless
                                 </td>
                             </tr>
+                            @continue
                         @elseif ($incidencia->es_reservada && ! $puedeVerActa)
                             {{-- Acta reservada: solo se muestra alumno, fecha y la etiqueta "Reservado" --}}
                             <tr>
@@ -186,10 +186,9 @@
                             <td>
                                 <div class="d-flex flex-wrap justify-content-end gap-2">
                                     <a href="{{ route('incidencias.show', $incidencia) }}" class="btn btn-sm btn-outline-secondary">Ver</a>
-                                    @if ($incidencia->es_reservada && in_array(session('usuario_rol'), ['Directora', 'Subdirector'], true))
-                                        <a href="{{ route('incidencias.acta.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar acta</a>
-                                    @endif
-                                    @if (session('usuario_rol') === 'Administrador'
+                                    @if ($puedeVerActa)
+                                        <a href="{{ route('incidencias.acta.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar</a>
+                                    @elseif (session('usuario_rol') === 'Administrador'
                                         || (session('usuario_rol') === 'Profesor' && (int) $incidencia->usuario_id === (int) session('usuario_id')))
                                         <a href="{{ route('incidencias.edit', $incidencia) }}" class="btn btn-sm btn-outline-primary">Editar</a>
                                     @endif

@@ -8,6 +8,7 @@ use App\Models\Estudiante;
 use App\Models\Rol;
 use App\Models\Seccion;
 use App\Models\User;
+use App\Services\ChatbotContextoService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -1188,7 +1189,7 @@ class TeacherAssignmentTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_reserved_acta_pdf_is_downloadable_only_by_school_leadership(): void
+    public function test_acta_conversion_and_pdf_access_are_limited_to_school_leadership(): void
     {
         Schema::create('actas_incidencia', function (Blueprint $table): void {
             $table->id();
@@ -1285,7 +1286,9 @@ class TeacherAssignmentTest extends TestCase
             'usuario_rol' => 'Directora',
         ])->get(route('incidencias.acta.create'))
             ->assertOk()
-            ->assertSee('Registrar Acta de Incidencia');
+            ->assertSee('Registrar Acta de Incidencia')
+            ->assertSee('option value="1" selected>Reservada</option>', false)
+            ->assertSee('href="'.route('incidencias.index').'" class="btn btn-outline-secondary">Volver</a>', false);
         $this->get(route('incidencias.acta.estudiantes.buscar', [
             'buscar' => 'Estudiante Reservado',
         ]))->assertOk()
@@ -1326,6 +1329,19 @@ class TeacherAssignmentTest extends TestCase
         $this->withSession([
             'usuario_id' => $directora->id,
             'usuario_rol' => 'Directora',
+        ])->post(route('incidencias.acta.store'), [
+            'estudiante_id' => $estudianteId,
+            'es_reservada' => '0',
+        ])->assertRedirect();
+        $this->assertDatabaseHas('incidencias', [
+            'usuario_id' => $directora->id,
+            'estudiante_id' => $estudianteId,
+            'es_reservada' => false,
+        ]);
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
         ])->get(route('incidencias.acta.edit', $incidenciaId))
             ->assertOk()
             ->assertSee('I.E. Tungasuca')
@@ -1355,7 +1371,9 @@ class TeacherAssignmentTest extends TestCase
         $this->withSession([
             'usuario_id' => 1,
             'usuario_rol' => 'Administrador',
-        ])->get(route('incidencias.acta.pdf', $incidenciaId))
+        ])->get(route('incidencias.acta.edit', $incidenciaId))
+            ->assertForbidden();
+        $this->get(route('incidencias.acta.pdf', $incidenciaId))
             ->assertForbidden();
 
         $profesor = User::create([
@@ -1381,7 +1399,235 @@ class TeacherAssignmentTest extends TestCase
             ->assertDontSee('Registro reservado');
         $this->get(route('incidencias.show', $incidenciaId))
             ->assertForbidden();
+        $this->get(route('incidencias.acta.edit', $incidenciaId))
+            ->assertForbidden();
         $this->get(route('incidencias.acta.pdf', $incidenciaId))
+            ->assertForbidden();
+
+        $incidenciaProfesorId = \DB::table('incidencias')->insertGetId([
+            'estudiante_id' => $estudianteId,
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'fecha' => '2026-11-20',
+            'hora' => '10:30:00',
+            'descripcion' => 'Relato original del profesor',
+            'gravedad_id' => $gravedadId,
+            'estado_id' => $estadoId,
+            'es_reservada' => false,
+        ]);
+        $tipoId = \DB::table('tipos_incidencia')->insertGetId(['nombre' => 'Conflicto']);
+        \DB::table('incidencia_tipo')->insert([
+            'incidencia_id' => $incidenciaProfesorId,
+            'tipo_incidencia_id' => $tipoId,
+        ]);
+
+        $estudianteReservadoId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '44445555',
+            'nombre' => 'Alumno Confidencial Chatbot',
+            'seccion_id' => $seccion->id,
+        ]);
+        $incidenciaReservadaId = \DB::table('incidencias')->insertGetId([
+            'estudiante_id' => $estudianteReservadoId,
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'fecha' => now()->toDateString(),
+            'hora' => '11:00:00',
+            'descripcion' => 'DESCRIPCION PRIVADA CHATBOT',
+            'gravedad_id' => $gravedadId,
+            'estado_id' => $estadoId,
+            'es_reservada' => true,
+        ]);
+        $actaReservadaId = \DB::table('actas_incidencia')->insertGetId([
+            'incidencia_id' => $incidenciaReservadaId,
+            'ie' => 'IE PRIVADA CHATBOT',
+            'informante_nombres' => 'INFORMANTE PRIVADO CHATBOT',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        \DB::table('acta_agresores')->insert([
+            'acta_incidencia_id' => $actaReservadaId,
+            'tipo' => 'estudiante',
+            'nombres' => 'AGRESOR PRIVADO CHATBOT',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $preguntaChatbot = 'resumen total de incidencias';
+        $promptAntesConversion = app(ChatbotContextoService::class)
+            ->construirPrompt($directora, $preguntaChatbot);
+        $totalAntesConversion = \DB::table('incidencias')->count();
+        $dashboardAntesConversion = $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->get(route('dashboard'))
+            ->assertOk();
+        preg_match(
+            '/Total registradas<\/div>\s*<div class="display-6 fw-bold">(\d+)<\/div>/',
+            $dashboardAntesConversion->getContent(),
+            $conteoDashboardAntes
+        );
+        $this->assertNotEmpty($conteoDashboardAntes[1] ?? null);
+
+        $urlEdicionActa = route('incidencias.acta.edit', $incidenciaProfesorId);
+        $urlEdicionActaReservada = route('incidencias.acta.edit', $incidenciaId);
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->get(route('incidencias.index'))
+            ->assertOk()
+            ->assertSee('href="'.$urlEdicionActa.'" class="btn btn-sm btn-outline-primary">Editar</a>', false)
+            ->assertSee('href="'.$urlEdicionActaReservada.'" class="btn btn-sm btn-outline-primary">Editar</a>', false)
+            ->assertDontSee('Editar acta');
+        $respuestaUrgencias = $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->get(route('incidencias.urgencias'))
+            ->assertOk()
+            ->assertSee('href="'.$urlEdicionActa.'" class="btn btn-sm btn-outline-primary">Editar</a>', false)
+            ->assertSee('href="'.$urlEdicionActaReservada.'" class="btn btn-sm btn-outline-primary">Editar</a>', false)
+            ->assertDontSee('Editar acta');
+        $this->assertSame(1, substr_count($respuestaUrgencias->getContent(), $urlEdicionActa));
+        $this->assertSame(1, substr_count($respuestaUrgencias->getContent(), $urlEdicionActaReservada));
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->get(route('incidencias.acta.edit', $incidenciaProfesorId))
+            ->assertOk()
+            ->assertSee('Convertir incidencia #'.$incidenciaProfesorId.' en acta')
+            ->assertSee('Estás editando una incidencia registrada por el profesor', false)
+            ->assertSee('Profesor</strong>. Los datos se trasladaron a este formato.', false)
+            ->assertSee('option value="0" selected>Pública</option>', false)
+            ->assertSee('href="'.route('incidencias.index').'" class="btn btn-outline-secondary">Volver</a>', false)
+            ->assertSee('Estudiante Reservado')
+            ->assertDontSee('Relato actualizado');
+        $this->get(route('incidencias.index'))->assertOk();
+        $this->assertSame($totalAntesConversion, \DB::table('incidencias')->count());
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->put(route('incidencias.acta.update', $incidenciaProfesorId), [
+            'estudiante_id' => $estudianteId,
+            'es_reservada' => '0',
+            'gravedad_id' => $gravedadId,
+            'estado_id' => $estadoId,
+            'descripcion' => 'Relato actualizado',
+            'ie' => 'I.E. Conversión',
+            'informante_nombres' => 'INFORMANTE FICHA PUBLICA PRIVADO',
+            'agresores' => [
+                ['tipo' => 'estudiante', 'nombres' => 'AGRESOR FICHA PUBLICA PRIVADO'],
+            ],
+        ])->assertRedirect(route('incidencias.show', $incidenciaProfesorId))
+            ->assertSessionHas('success', 'Incidencia convertida a acta correctamente.');
+
+        $this->assertDatabaseHas('incidencias', [
+            'id' => $incidenciaProfesorId,
+            'estudiante_id' => $estudianteId,
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'fecha' => '2026-11-20',
+            'hora' => '10:30:00',
+            'descripcion' => 'Relato actualizado',
+            'gravedad_id' => $gravedadId,
+            'estado_id' => $estadoId,
+            'es_reservada' => false,
+        ]);
+        $this->assertDatabaseHas('actas_incidencia', [
+            'incidencia_id' => $incidenciaProfesorId,
+            'ie' => 'I.E. Conversión',
+            'informante_nombres' => 'INFORMANTE FICHA PUBLICA PRIVADO',
+        ]);
+        $this->assertDatabaseHas('incidencia_tipo', [
+            'incidencia_id' => $incidenciaProfesorId,
+            'tipo_incidencia_id' => $tipoId,
+        ]);
+        $this->assertSame($totalAntesConversion, \DB::table('incidencias')->count());
+
+        $promptDespuesConversion = app(ChatbotContextoService::class)
+            ->construirPrompt($directora, $preguntaChatbot);
+        preg_match('/^- Total de incidencias: (\d+)$/m', $promptAntesConversion, $conteoAntes);
+        preg_match('/^- Total de incidencias: (\d+)$/m', $promptDespuesConversion, $conteoDespues);
+        $this->assertSame($conteoAntes[1] ?? null, $conteoDespues[1] ?? null);
+        $dashboardDespuesConversion = $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->get(route('dashboard'))
+            ->assertOk();
+        preg_match(
+            '/Total registradas<\/div>\s*<div class="display-6 fw-bold">(\d+)<\/div>/',
+            $dashboardDespuesConversion->getContent(),
+            $conteoDashboardDespues
+        );
+        $this->assertSame($conteoDashboardAntes[1], $conteoDashboardDespues[1] ?? null);
+        $this->assertStringNotContainsString('Alumno Confidencial Chatbot', $promptDespuesConversion);
+        $this->assertStringNotContainsString('DESCRIPCION PRIVADA CHATBOT', $promptDespuesConversion);
+        $this->assertStringNotContainsString('IE PRIVADA CHATBOT', $promptDespuesConversion);
+        $this->assertStringNotContainsString('AGRESOR PRIVADO CHATBOT', $promptDespuesConversion);
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('incidencias.show', $incidenciaProfesorId))
+            ->assertOk()
+            ->assertDontSee('I.E. Conversión')
+            ->assertDontSee('INFORMANTE FICHA PUBLICA PRIVADO')
+            ->assertDontSee('AGRESOR FICHA PUBLICA PRIVADO');
+        $this->get(route('incidencias.acta.edit', $incidenciaProfesorId))
+            ->assertForbidden();
+        $this->get(route('incidencias.edit', $incidenciaProfesorId))
+            ->assertOk();
+        $this->get(route('incidencias.acta.pdf', $incidenciaProfesorId))
+            ->assertForbidden();
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->get(route('incidencias.acta.pdf', $incidenciaProfesorId))
+            ->assertDownload('acta-incidencia-'.$incidenciaProfesorId.'.pdf');
+        $this->get(route('incidencias.show', $incidenciaProfesorId))
+            ->assertOk()
+            ->assertSee('Editar')
+            ->assertSee(route('incidencias.acta.edit', $incidenciaProfesorId), false)
+            ->assertSee(route('incidencias.acta.pdf', $incidenciaProfesorId), false);
+
+        $subdirector = User::create([
+            'name' => 'Subdirector',
+            'email' => 'subdirector-acta@example.test',
+            'dni' => '87654319',
+            'password' => 'clave-segura',
+            'rol_id' => Rol::where('nombre_rol', 'Subdirector')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $this->withSession([
+            'usuario_id' => $subdirector->id,
+            'usuario_rol' => 'Subdirector',
+        ])->get(route('incidencias.acta.edit', $incidenciaProfesorId))
+            ->assertOk();
+        $this->get(route('incidencias.acta.pdf', $incidenciaProfesorId))
+            ->assertDownload('acta-incidencia-'.$incidenciaProfesorId.'.pdf');
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->put(route('incidencias.acta.update', $incidenciaProfesorId), [
+            'estudiante_id' => $estudianteId,
+            'es_reservada' => '1',
+        ])->assertRedirect(route('incidencias.show', $incidenciaProfesorId));
+
+        $this->assertDatabaseHas('incidencias', [
+            'id' => $incidenciaProfesorId,
+            'es_reservada' => true,
+        ]);
+        $this->assertSame(
+            1,
+            \DB::table('actas_incidencia')->where('incidencia_id', $incidenciaProfesorId)->count()
+        );
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('incidencias.show', $incidenciaProfesorId))
             ->assertForbidden();
     }
 

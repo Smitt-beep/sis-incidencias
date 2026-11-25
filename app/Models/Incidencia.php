@@ -44,9 +44,7 @@ class Incidencia extends Model
         return $this->belongsTo(User::class, 'usuario_id', 'id');
     }
 
-    /**
-     * Datos del acta (formato de la directora). Solo existe si es_reservada = true.
-     */
+    /** Datos del formato de acta, que puede ser público o reservado. */
     public function acta(): HasOne
     {
         return $this->hasOne(ActaIncidencia::class, 'incidencia_id');

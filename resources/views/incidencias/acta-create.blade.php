@@ -1,12 +1,19 @@
 @extends('layouts.app')
 
-@section('title', isset($incidencia) ? 'Editar Acta de Incidencia' : 'Registrar Acta de Incidencia')
+@section('title', ($esConversion ?? false)
+    ? 'Convertir incidencia en acta'
+    : (isset($incidencia) ? 'Editar Acta de Incidencia' : 'Registrar Acta de Incidencia'))
 
 @section('content')
 @php
     $incidenciaActa = $incidencia ?? null;
     $acta = $incidenciaActa?->acta;
     $esEdicionActa = $incidenciaActa !== null;
+    $esConversion = $esConversion ?? false;
+    $visibilidadPredeterminada = $esConversion
+        ? '0'
+        : ($esEdicionActa ? ($incidenciaActa->es_reservada ? '1' : '0') : '1');
+    $visibilidadSeleccionada = (string) old('es_reservada', $visibilidadPredeterminada);
     $agresoresFormulario = old('agresores');
     if ($agresoresFormulario === null) {
         $agresoresFormulario = [];
@@ -22,9 +29,24 @@
     }
 @endphp
 <div class="mb-4">
-    <h1 class="h2 mb-1">{{ $esEdicionActa ? 'Editar Acta de Incidencia #'.$incidenciaActa->id : 'Registrar Acta de Incidencia' }}</h1>
+    <h1 class="h2 mb-1">
+        @if ($esConversion)
+            Convertir incidencia #{{ $incidenciaActa->id }} en acta
+        @elseif ($esEdicionActa)
+            Editar Acta de Incidencia #{{ $incidenciaActa->id }}
+        @else
+            Registrar Acta de Incidencia
+        @endif
+    </h1>
     <p class="text-secondary mb-0">Los campos opcionales pueden dejarse en blanco.</p>
 </div>
+
+@if ($esConversion)
+    <div class="alert alert-info" role="status">
+        Estás editando una incidencia registrada por el profesor
+        <strong>{{ $incidenciaActa->usuario?->name ?? '—' }}</strong>. Los datos se trasladaron a este formato.
+    </div>
+@endif
 
 <form action="{{ $esEdicionActa ? route('incidencias.acta.update', $incidenciaActa) : route('incidencias.acta.store') }}" method="POST" class="card border-0 shadow-sm">
     @csrf
@@ -35,6 +57,22 @@
         @if ($errors->has('base'))
             <div class="alert alert-danger">{{ $errors->first('base') }}</div>
         @endif
+
+        <h2 class="h5 mb-3">Visibilidad</h2>
+        <div class="mb-4">
+            <label for="es_reservada" class="form-label">¿Cómo debe quedar esta incidencia?</label>
+            <select
+                name="es_reservada"
+                id="es_reservada"
+                class="form-select @error('es_reservada') is-invalid @enderror"
+                required
+            >
+                <option value="1" @selected($visibilidadSeleccionada === '1')>Reservada</option>
+                <option value="0" @selected($visibilidadSeleccionada === '0')>Pública</option>
+            </select>
+            <div class="form-text">Las incidencias reservadas solo son visibles para Directora y Subdirector.</div>
+            @error('es_reservada') <div class="invalid-feedback">{{ $message }}</div> @enderror
+        </div>
 
         <h2 class="h5 mb-3">Estudiante agredido</h2>
         <div class="row g-3 mb-4">
@@ -140,8 +178,8 @@
         <input name="violencia_otro" value="{{ old('violencia_otro', $acta?->violencia_otro) }}" class="form-control">
     </div>
     <div class="card-footer d-flex gap-2">
-        <button type="submit" class="btn btn-primary">{{ $esEdicionActa ? 'Actualizar acta' : 'Guardar acta' }}</button>
-        <a href="{{ route('incidencias.index') }}" class="btn btn-outline-secondary">Cancelar</a>
+        <a href="{{ route('incidencias.index') }}" class="btn btn-outline-secondary">Volver</a>
+        <button type="submit" class="btn btn-primary">{{ $esEdicionActa && ! $esConversion ? 'Actualizar acta' : 'Guardar acta' }}</button>
     </div>
 </form>
 

@@ -43,9 +43,14 @@ class IncidenciaController extends Controller
     public function editActa(Request $request, Incidencia $incidencia)
     {
         $this->authorizeIncidencia($request, $incidencia, 'update');
-        abort_unless($incidencia->es_reservada, 404);
-        $incidencia->load(['estudiante.seccion', 'acta.agresores']);
-        abort_unless($incidencia->acta, 404);
+        $incidencia->load([
+            'estudiante.seccion',
+            'usuario',
+            'gravedad',
+            'estado',
+            'acta.agresores',
+        ]);
+        $esConversion = $incidencia->acta === null;
 
         $secciones = Seccion::query()->orderBy('grado')->orderBy('seccion')->get();
         $estudiantes = Estudiante::with('seccion')->orderBy('nombre')->limit(50)->get();
@@ -53,7 +58,7 @@ class IncidenciaController extends Controller
             $estudiantes->prepend($incidencia->estudiante);
         }
 
-        return view('incidencias.acta-create', compact('incidencia', 'secciones', 'estudiantes'));
+        return view('incidencias.acta-create', compact('incidencia', 'secciones', 'estudiantes', 'esConversion'));
     }
 
     public function buscarEstudiantesActa(Request $request)
@@ -115,7 +120,7 @@ class IncidenciaController extends Controller
                 'descripcion' => null,
                 'gravedad_id' => $gravedad->id,
                 'estado_id' => $estado->id,
-                'es_reservada' => true,
+                'es_reservada' => $datos['es_reservada'] ?? true,
             ]);
 
             $acta = $incidencia->acta()->create($this->actaAttributes($datos));
@@ -137,37 +142,61 @@ class IncidenciaController extends Controller
     public function updateActa(Request $request, Incidencia $incidencia)
     {
         $this->authorizeIncidencia($request, $incidencia, 'update');
-        abort_unless($incidencia->es_reservada, 404);
         $datos = $this->validatedActaData($request);
 
-        DB::transaction(function () use ($incidencia, $datos): void {
+        $seConvirtio = DB::transaction(function () use ($incidencia, $datos): bool {
             $incidenciaBloqueada = Incidencia::query()
                 ->whereKey($incidencia->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
-            abort_unless($incidenciaBloqueada->es_reservada, 404);
-            $acta = $incidenciaBloqueada->acta()->lockForUpdate()->firstOrFail();
+            $acta = $incidenciaBloqueada->acta()->lockForUpdate()->first();
+            $seCreoActa = $acta === null;
 
-            $incidenciaBloqueada->update(['estudiante_id' => $datos['estudiante_id']]);
-            $acta->update($this->actaAttributes($datos));
+            $atributosIncidencia = [
+                'estudiante_id' => $datos['estudiante_id'],
+                'es_reservada' => $datos['es_reservada'] ?? $incidenciaBloqueada->es_reservada,
+            ];
+            foreach (['gravedad_id', 'estado_id', 'descripcion'] as $campo) {
+                if (array_key_exists($campo, $datos)) {
+                    $atributosIncidencia[$campo] = $datos[$campo];
+                }
+            }
+            $incidenciaBloqueada->update($atributosIncidencia);
+
+            if ($acta === null) {
+                $acta = $incidenciaBloqueada->acta()->create($this->actaAttributes($datos));
+            } else {
+                $acta->update($this->actaAttributes($datos));
+            }
+
             $acta->agresores()->delete();
-
             foreach ($datos['agresores'] ?? [] as $agresor) {
                 $atributosAgresor = $this->agresorAttributes($agresor);
                 if ($atributosAgresor !== null) {
                     $acta->agresores()->create($atributosAgresor);
                 }
             }
+
+            return $seCreoActa;
         });
 
         return redirect()->route('incidencias.show', $incidencia)
-            ->with('success', 'Acta de incidencia actualizada correctamente.');
+            ->with(
+                'success',
+                $seConvirtio
+                    ? 'Incidencia convertida a acta correctamente.'
+                    : 'Acta de incidencia actualizada correctamente.'
+            );
     }
 
     private function validatedActaData(Request $request): array
     {
         $reglas = [
             'estudiante_id' => ['required', 'integer', 'exists:estudiantes,id'],
+            'es_reservada' => ['sometimes', 'boolean'],
+            'gravedad_id' => ['sometimes', 'required', 'integer', 'exists:gravedades,id'],
+            'estado_id' => ['sometimes', 'required', 'integer', 'exists:estados,id'],
+            'descripcion' => ['sometimes', 'nullable', 'string'],
             'ie' => ['nullable', 'string', 'max:255'],
             'dre' => ['nullable', 'string', 'max:255'],
             'ugel' => ['nullable', 'string', 'max:255'],
@@ -221,6 +250,9 @@ class IncidenciaController extends Controller
                 $value = null;
             }
         });
+        if (array_key_exists('es_reservada', $datos)) {
+            $datos['es_reservada'] = filter_var($datos['es_reservada'], FILTER_VALIDATE_BOOLEAN);
+        }
 
         return $datos;
     }
@@ -402,8 +434,14 @@ class IncidenciaController extends Controller
             'tiposIncidencia',
             'fotografias',
         ]);
+        $puedeGestionarActa = in_array(
+            session('usuario_rol'),
+            ['Directora', 'Subdirector'],
+            true
+        );
+        $tieneActa = $puedeGestionarActa && $incidencia->acta()->exists();
 
-        return view('incidencias.show', compact('incidencia'));
+        return view('incidencias.show', compact('incidencia', 'puedeGestionarActa', 'tieneActa'));
     }
 
     public function edit(Request $request, Incidencia $incidencia)
