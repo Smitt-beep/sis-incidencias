@@ -13,6 +13,40 @@
         <form action="{{ route('incidencias.store') }}" method="POST" enctype="multipart/form-data">
             @csrf
             <div class="row g-3">
+                @if ($contextoProfesor)
+              {{-- El profesor ya eligió su aula en Inicio: se muestra fija y el alumno se busca con la lupa --}}
+              <input type="hidden" name="curso_id" value="{{ $contextoProfesor['curso_id'] }}">
+              <input type="hidden" name="seccion_id" value="{{ $contextoProfesor['seccion_id'] }}">
+
+              <div class="col-12">
+                  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 rounded border bg-light px-3 py-2">
+                      <div>
+                          <span class="text-secondary small d-block">Aula elegida en Inicio</span>
+                          <strong>Grado {{ $contextoProfesor['grado'] }} · Sección {{ $contextoProfesor['seccion'] }} · Curso {{ $contextoProfesor['curso'] }}</strong>
+                      </div>
+                      <a href="{{ route('dashboard') }}" class="btn btn-outline-secondary btn-sm">Cambiar aula</a>
+                  </div>
+              </div>
+
+              <div class="col-12">
+                  <label for="buscar_estudiante" class="form-label">Estudiante</label>
+                  <input type="hidden" name="estudiante_id" id="estudiante_id" value="{{ old('estudiante_id') }}">
+                  <div class="position-relative">
+                      <div class="input-group">
+                          <span class="input-group-text" aria-hidden="true">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                          </span>
+                          <input type="text" id="buscar_estudiante" class="form-control @error('estudiante_id') is-invalid @enderror"
+                                 placeholder="Busca por nombre o documento ({{ count($contextoProfesor['estudiantes']) }} alumnos en esta aula)"
+                                 autocomplete="off" aria-controls="lista_estudiantes">
+                          <button type="button" class="btn btn-outline-secondary" id="cambiar_estudiante" hidden>Cambiar</button>
+                          @error('estudiante_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                      </div>
+                      <div class="list-group position-absolute w-100 shadow-sm" id="lista_estudiantes" style="z-index: 1050; max-height: 260px; overflow-y: auto;" hidden></div>
+                  </div>
+                  <div class="form-text text-danger" id="estudiante_error" hidden>Busca y selecciona un estudiante de la lista.</div>
+              </div>
+              @else
                 <div class="col-md-4">
                     <label for="curso_id" class="form-label">Curso</label>
                     <select name="curso_id" id="curso_id" class="form-select @error('curso_id') is-invalid @enderror" required>
@@ -53,6 +87,8 @@
                     </select>
                     @error('estudiante_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
                 </div>
+                @endif
+
 
                 <div class="col-12">
                     <p class="text-secondary mb-0">La fecha y hora se registrarán automáticamente al guardar la incidencia</p>
@@ -235,6 +271,95 @@
     </div>
 </div>
 
+@if ($contextoProfesor)
+<script type="application/json" id="estudiantes-aula">@json($contextoProfesor['estudiantes'])</script>
+<script>
+    (function () {
+        const alumnos = JSON.parse(document.getElementById('estudiantes-aula').textContent);
+        const campoId = document.getElementById('estudiante_id');
+        const buscador = document.getElementById('buscar_estudiante');
+        const lista = document.getElementById('lista_estudiantes');
+        const botonCambiar = document.getElementById('cambiar_estudiante');
+        const mensajeError = document.getElementById('estudiante_error');
+        const formulario = buscador.closest('form');
+
+        // Quita tildes y mayúsculas para que "pena" encuentre "PEÑA"
+        const limpiar = (texto) => String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+        function elegir(alumno) {
+            campoId.value = alumno.id;
+            buscador.value = alumno.nombre;
+            buscador.readOnly = true;
+            botonCambiar.hidden = false;
+            lista.hidden = true;
+            mensajeError.hidden = true;
+        }
+
+        function mostrar(texto) {
+            const palabras = limpiar(texto).split(/\s+/).filter(Boolean);
+            lista.innerHTML = '';
+            if (palabras.length === 0) { lista.hidden = true; return; }
+
+            const encontrados = alumnos.filter((a) => {
+                const base = limpiar(a.nombre) + ' ' + limpiar(a.dni);
+                return palabras.every((p) => base.includes(p));
+            }).slice(0, 8);
+
+            if (encontrados.length === 0) {
+                const vacio = document.createElement('div');
+                vacio.className = 'list-group-item text-secondary small';
+                vacio.textContent = 'Ningún alumno de esta aula coincide.';
+                lista.appendChild(vacio);
+            }
+            encontrados.forEach((alumno) => {
+                const opcion = document.createElement('button');
+                opcion.type = 'button';
+                opcion.className = 'list-group-item list-group-item-action';
+                opcion.textContent = alumno.nombre + (alumno.dni ? ' — ' + alumno.dni : '');
+                opcion.addEventListener('click', () => elegir(alumno));
+                lista.appendChild(opcion);
+            });
+            lista.hidden = false;
+        }
+
+        buscador.addEventListener('input', () => {
+            campoId.value = ''; // si cambia el texto, ya no hay alumno elegido
+            mostrar(buscador.value);
+        });
+        buscador.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Enter no envía el formulario: elige el primer resultado
+                const primero = lista.querySelector('button');
+                if (primero) primero.click();
+            } else if (e.key === 'Escape') {
+                lista.hidden = true;
+            }
+        });
+        botonCambiar.addEventListener('click', () => {
+            campoId.value = '';
+            buscador.value = '';
+            buscador.readOnly = false;
+            botonCambiar.hidden = true;
+            buscador.focus();
+        });
+        document.addEventListener('click', (e) => {
+            if (!lista.contains(e.target) && e.target !== buscador) lista.hidden = true;
+        });
+        formulario.addEventListener('submit', (e) => {
+            if (campoId.value === '') {
+                e.preventDefault();
+                mensajeError.hidden = false;
+                buscador.focus();
+            }
+        });
+
+        // Si el formulario volvió con errores, se recupera el alumno que ya se había elegido
+        const previo = alumnos.find((a) => String(a.id) === String(campoId.value));
+        if (previo) elegir(previo);
+    })();
+</script>
+@else
+
 <script>
     const courseSelect = document.getElementById('curso_id');
     const sectionSelect = document.getElementById('seccion_id');
@@ -284,4 +409,5 @@
     filterSections();
     filterStudents();
 </script>
+@endif
 @endsection

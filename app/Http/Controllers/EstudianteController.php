@@ -58,8 +58,8 @@ class EstudianteController extends Controller
             $operator = DB::connection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
             $query->where(function ($estudiantesQuery) use ($buscar, $operator) {
                 $estudiantesQuery
-                    ->where('nombre', $operator, '%'.$buscar.'%')
-                    ->orWhere('dni', 'like', '%'.$buscar.'%');
+                    ->where('nombre', $operator, '%' . $buscar . '%')
+                    ->orWhere('dni', 'like', '%' . $buscar . '%');
             });
         }
 
@@ -78,7 +78,7 @@ class EstudianteController extends Controller
 
     private function contextoDashboardProfesor(User $usuario): ?array
     {
-        $contexto = session()->get('contexto_dashboard_profesor_'.$usuario->getKey());
+        $contexto = session()->get('contexto_dashboard_profesor_' . $usuario->getKey());
         if (
             !is_array($contexto)
             || trim((string) ($contexto['grado'] ?? '')) === ''
@@ -105,7 +105,9 @@ class EstudianteController extends Controller
 
     public function reporteSeleccionar(Request $request, Estudiante $estudiante)
     {
-        $this->authorizeReporteEstudiante($request, $estudiante);
+       if ($respuesta = $this->authorizeReporteEstudiante($request, $estudiante)) {
+            return $respuesta;
+        }
         $incidencias = $this->incidenciasDeEstudiante($estudiante);
 
         return view('estudiantes.reporte-seleccionar', compact('estudiante', 'incidencias'));
@@ -113,7 +115,9 @@ class EstudianteController extends Controller
 
     public function reportePdf(Request $request, Estudiante $estudiante)
     {
-        $this->authorizeReporteEstudiante($request, $estudiante);
+       if ($respuesta = $this->authorizeReporteEstudiante($request, $estudiante)) {
+            return $respuesta;
+        }
         $datos = $request->validate([
             'incidencia_ids' => ['required', 'array', 'min:1'],
             'incidencia_ids.*' => ['required', 'integer', 'distinct'],
@@ -131,25 +135,38 @@ class EstudianteController extends Controller
 
     public function reportePdfTodas(Request $request, Estudiante $estudiante)
     {
-        $this->authorizeReporteEstudiante($request, $estudiante);
+       if ($respuesta = $this->authorizeReporteEstudiante($request, $estudiante)) {
+            return $respuesta;
+        }
+        $incidencias = $this->incidenciasDeEstudiante($estudiante);
 
-        return $this->descargarReportePdf($estudiante, $this->incidenciasDeEstudiante($estudiante));
+        if ($incidencias->isEmpty()) {
+            return redirect()
+                ->route('estudiantes.reporte.seleccionar', $estudiante)
+                ->with('info', 'Este alumno no tiene incidencias registradas.');
+        }
+
+        return $this->descargarReportePdf($estudiante, $incidencias);
     }
-
-    private function authorizeReporteEstudiante(Request $request, Estudiante $estudiante): void
+private function authorizeReporteEstudiante(Request $request, Estudiante $estudiante)
     {
         $usuario = User::with('rol')->findOrFail($request->session()->get('usuario_id'));
         $rol = $usuario->rol?->nombre_rol;
 
         if ($rol === 'Profesor') {
-            abort_unless(
-                $usuario->seccionesDocentes()->whereKey($estudiante->seccion_id)->exists(),
-                404
-            );
-            return;
+            $seccionesAsignadas = $usuario->seccionesDocentes()->pluck('secciones.id');
+
+            if ($seccionesAsignadas->isNotEmpty() && !$seccionesAsignadas->contains((int) $estudiante->seccion_id)) {
+                return redirect()
+                    ->route('estudiantes.index')
+                    ->with('info', 'No tiene asignada la sección de este alumno para generar reportes.');
+            }
+
+            return null;
         }
 
         abort_unless(in_array($rol, ['Directora', 'Subdirector'], true), 403);
+        return null;
     }
 
     private function incidenciasDeEstudiante(Estudiante $estudiante, ?array $ids = null): EloquentCollection
@@ -157,7 +174,7 @@ class EstudianteController extends Controller
         return $estudiante->incidencias()
             ->where('es_reservada', false) // las actas reservadas no salen en el reporte al apoderado
             ->with(['gravedad', 'estado', 'curso'])
-            ->when($ids !== null, fn ($query) => $query->whereIn('id', $ids))
+            ->when($ids !== null, fn($query) => $query->whereIn('id', $ids))
             ->orderByDesc('fecha')
             ->orderByDesc('hora')
             ->get();
@@ -169,12 +186,10 @@ class EstudianteController extends Controller
 
         return Pdf::loadView('estudiantes.reporte-pdf', compact('estudiante', 'incidencias'))
             ->setPaper('a4')
-            ->download('reporte-'.$estudiante->dni.'.pdf');
+            ->download('reporte-' . $estudiante->dni . '.pdf');
     }
 
-    public function create()
-    {
-    }
+    public function create() {}
 
     public function store(Request $request)
     {
@@ -216,9 +231,7 @@ class EstudianteController extends Controller
             ->with('success', 'Alumno registrado correctamente.');
     }
 
-    public function show(Estudiante $estudiante)
-    {
-    }
+    public function show(Estudiante $estudiante) {}
 
     public function edit(Estudiante $estudiante)
     {
@@ -229,10 +242,10 @@ class EstudianteController extends Controller
         $secciones = $seccionesAsignadas->isEmpty()
             ? Seccion::query()->orderBy('grado')->orderBy('seccion')->get()
             : Seccion::query()
-                ->whereIn('id', $seccionesAsignadas->modelKeys())
-                ->orderBy('grado')
-                ->orderBy('seccion')
-                ->get();
+            ->whereIn('id', $seccionesAsignadas->modelKeys())
+            ->orderBy('grado')
+            ->orderBy('seccion')
+            ->get();
 
         abort_unless($secciones->contains('id', $estudiante->seccion_id), 404);
 
@@ -281,7 +294,5 @@ class EstudianteController extends Controller
             ->with('success', 'Alumno actualizado correctamente.');
     }
 
-    public function destroy(Estudiante $estudiante)
-    {
-    }
+    public function destroy(Estudiante $estudiante) {}
 }

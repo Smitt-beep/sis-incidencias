@@ -4,7 +4,12 @@
 
 @section('content')
 <style>
-    .professional-grade-menu { min-width: 13rem; width: min(18rem, calc(100vw - 3rem)); }
+    .professional-grade-menu {
+        min-width: 14rem;
+        width: min(19rem, calc(100vw - 3rem));
+        overflow: visible;
+        z-index: 1060;
+    }
     .professional-course-item { position: relative; }
     .professional-course-toggle {
         align-items: center;
@@ -19,8 +24,11 @@
         display: none;
         left: calc(100% - 1px);
         min-width: 17rem;
+        max-height: 260px;
+        overflow-y: auto;
         position: absolute;
-        top: -.25rem;
+        top: -2.5rem;
+        z-index: 1070;
     }
     .professional-course-item:hover > .professional-course-submenu,
     .professional-course-item:focus-within > .professional-course-submenu,
@@ -154,7 +162,7 @@
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4 no-print">
+<div class="card border-0 shadow-sm mb-4 no-print overflow-visible">
     <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
             <tr>
@@ -281,6 +289,11 @@
             Imprimir / Guardar PDF
         </button>
     </div>
+    @if ($reporte['total'] === 0)
+        <div class="alert alert-info no-print">
+            No hay incidencias registradas para la selección realizada.
+        </div>
+    @endif
     <section id="reporte-profesional-resultados" class="professional-report-document shadow-sm" aria-labelledby="reporte-profesional-title">
         <header class="professional-report-header">
             <img src="{{ asset('images/escudo-ie-tungasuca.png') }}" alt="Escudo de la I.E. Tungasuca" class="professional-report-logo">

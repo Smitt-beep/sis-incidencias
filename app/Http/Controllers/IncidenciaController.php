@@ -388,6 +388,17 @@ class IncidenciaController extends Controller
     {
         $user = $this->sessionUser($request);
         $formOptions = $this->incidenceFormOptions($user);
+        // El profesor ya eligió grado, sección y curso en Inicio: el formulario los usa tal cual
+      $contextoProfesor = null;
+      if ($formOptions['esProfesor']) {
+          $contextoProfesor = $this->aulaElegidaPorProfesor($request, $user);
+
+          if ($contextoProfesor === null) {
+              return redirect()->route('dashboard')->withErrors([
+                  'contexto' => 'Primero elige tu grado, sección y curso en Inicio y presiona «Aplicar».',
+              ]);
+          }
+      }
         $tiposIncidencia = TipoIncidencia::orderBy('nombre')->get();
         //obtiene sus gravedades registradas en la base de datos
         $gravedades = Gravedad::orderByRaw("
@@ -408,17 +419,69 @@ class IncidenciaController extends Controller
             END
         ")->get();
         return view('incidencias.create', array_merge($formOptions, compact(
-            'tiposIncidencia',
-            'gravedades',
-            'estados',
-        )));
-    }
+          'tiposIncidencia',
+          'gravedades',
+          'estados',
+          'contextoProfesor',
+      )));
+  }
+
+  /**
+   * Aula (grado, sección y curso) que el profesor eligió en Inicio, o null si no hay una válida.
+   * Incluye los alumnos de esa sección para el buscador del formulario.
+   */
+  private function aulaElegidaPorProfesor(Request $request, User $user): ?array
+  {
+      $contexto = $request->session()->get('contexto_dashboard_profesor_'.$user->getKey());
+      if (! $this->contextoDashboardProfesorValido($contexto)) {
+          return null;
+      }
+
+      $seccionId = (int) $contexto['seccion_id'];
+      $cursoId = (int) $contexto['curso_id'];
+
+      // Si el profesor tiene asignaciones, el aula elegida debe estar entre ellas
+      if ($user->asignacionesDocentes()->exists()
+          && ! $user->asignacionesDocentes()->where('seccion_id', $seccionId)->where('curso_id', $cursoId)->exists()) {
+          return null;
+      }
+
+      $seccion = Seccion::query()->find($seccionId);
+      $curso = Curso::query()->find($cursoId);
+      if (! $seccion || ! $curso) {
+          return null;
+      }
+
+      return [
+          'curso_id' => $cursoId,
+          'seccion_id' => $seccionId,
+          'curso' => $curso->nombre,
+          'grado' => $seccion->grado,
+          'seccion' => $seccion->seccion,
+          'estudiantes' => Estudiante::query()
+              ->where('seccion_id', $seccionId)
+              ->orderBy('nombre')
+              ->get(['id', 'nombre', 'dni'])
+              ->map(fn ($e) => ['id' => $e->id, 'nombre' => $e->nombre, 'dni' => $e->dni])
+              ->values()
+              ->all(),
+      ];
+  }
 
     public function store(Request $request)
     {
         $user = $this->sessionUser($request);
         Gate::forUser($user)->authorize('create', Incidencia::class);
-
+        // Profesor: curso y sección salen del aula elegida en Inicio (no se pueden cambiar desde el formulario)
+      if ($user->rol?->nombre_rol === 'Profesor') {
+          $aula = $this->aulaElegidaPorProfesor($request, $user);
+          if ($aula === null) {
+              return redirect()->route('dashboard')->withErrors([
+                  'contexto' => 'Primero elige tu grado, sección y curso en Inicio y presiona «Aplicar».',
+              ]);
+          }
+          $request->merge(['curso_id' => $aula['curso_id'], 'seccion_id' => $aula['seccion_id']]);
+      }
         $datos = $this->validatedData($request, $user);
         $fotografias = $this->validatedPhotographs($request);
         $tipos = $request->validate([

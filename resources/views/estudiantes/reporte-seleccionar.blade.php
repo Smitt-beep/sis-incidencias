@@ -7,6 +7,9 @@
         <h1 class="h2 mb-1">Seleccionar incidencias para reporte de {{ $estudiante->nombre }}</h1>
         <p class="text-secondary mb-0">Marca una incidencia para generar un reporte individual o varias para generar un reporte combinado.</p>
     </div>
+    @if (session('info'))
+        <div class="alert alert-info" role="status">{{ session('info') }}</div>
+    @endif
 
     @if ($incidencias->isEmpty())
         <div class="alert alert-info" role="status">Este alumno no tiene incidencias registradas.</div>
