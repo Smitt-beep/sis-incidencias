@@ -457,7 +457,8 @@ class TeacherAssignmentTest extends TestCase
         \DB::table('estudiantes')->insert([
             ['dni' => '12345678', 'nombre' => 'Alumno DNI', 'seccion_id' => $seccion->id],
             ['dni' => '123456789', 'nombre' => 'Alumno CE', 'seccion_id' => $seccion->id],
-            ['dni' => '1234567890', 'nombre' => 'Documento fuera del patrón', 'seccion_id' => $seccion->id],
+            ['dni' => '1234567890', 'nombre' => 'Alumno CE de diez dígitos', 'seccion_id' => $seccion->id],
+            ['dni' => '12345678901', 'nombre' => 'Documento fuera del patrón', 'seccion_id' => $seccion->id],
         ]);
 
         $this->withSession([
@@ -468,7 +469,8 @@ class TeacherAssignmentTest extends TestCase
             ->assertSee('Documento')
             ->assertSee('12345678 · DNI')
             ->assertSee('123456789 · CE')
-            ->assertSee('1234567890 · DNI')
+            ->assertSee('1234567890 · CE')
+            ->assertSee('12345678901 · DNI')
             ->assertSee('Nombre o documento');
     }
 

@@ -127,7 +127,7 @@
                 <tbody>
                     @forelse ($estudiantes as $estudiante)
                         <tr>
-                            <td>{{ $estudiante->dni }} · {{ preg_match('/\A[0-9]{9}\z/', (string) $estudiante->dni) === 1 ? 'CE' : 'DNI' }}</td>
+                            <td>{{ $estudiante->dni }} · {{ preg_match('/\A[0-9]{9,10}\z/', (string) $estudiante->dni) === 1 ? 'CE' : 'DNI' }}</td>
                             <td>{{ $estudiante->nombre }}</td>
                             <td>{{ $estudiante->seccion?->grado }}</td>
                             <td>{{ $estudiante->seccion?->seccion }}</td>
