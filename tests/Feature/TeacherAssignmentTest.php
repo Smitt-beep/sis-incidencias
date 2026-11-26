@@ -393,6 +393,11 @@ class TeacherAssignmentTest extends TestCase
             'nombre' => 'Alumno de otra sección',
             'seccion_id' => $seccionNoAsignada->id,
         ]);
+        \DB::table('estudiantes')->insert([
+            'dni' => '33333333',
+            'nombre' => 'Alumno de la sección activa',
+            'seccion_id' => $seccionAsignada->id,
+        ]);
         $this->withSession([
             'usuario_id' => $profesor->id,
             'usuario_rol' => 'Profesor',
@@ -400,9 +405,21 @@ class TeacherAssignmentTest extends TestCase
 
         $this->get(route('estudiantes.index'))
             ->assertOk()
+            ->assertSee('Selecciona Grado, Sección y Curso en Inicio para ver alumnos.')
+            ->assertDontSee('Alumno de otra sección');
+
+        $this->get(route('dashboard', [
+            'grado' => $seccionAsignada->grado,
+            'seccion_id' => $seccionAsignada->id,
+            'curso_id' => $curso->id,
+        ]))->assertOk();
+
+        $this->get(route('estudiantes.index'))
+            ->assertOk()
             ->assertSee('Añadir alumno')
             ->assertSee('1.º - A')
             ->assertDontSee('2.º - B')
+            ->assertSee('Alumno de la sección activa')
             ->assertDontSee('Alumno de otra sección');
 
         $this->post(route('estudiantes.store'), [
@@ -421,7 +438,92 @@ class TeacherAssignmentTest extends TestCase
 
         $this->get(route('estudiantes.index'))
             ->assertSee('Alumno Nuevo')
+            ->assertSee('Alumno de la sección activa')
             ->assertDontSee('Alumno de otra sección');
+    }
+
+    public function test_student_list_displays_document_type_from_the_confirmed_number_rule(): void
+    {
+        $seccion = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
+        $directora = User::create([
+            'name' => 'Directora Documentos',
+            'email' => 'directora.documentos@example.test',
+            'dni' => '87654320',
+            'password' => 'clave-segura',
+            'rol_id' => Rol::where('nombre_rol', 'Directora')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        \DB::table('estudiantes')->insert([
+            ['dni' => '12345678', 'nombre' => 'Alumno DNI', 'seccion_id' => $seccion->id],
+            ['dni' => '123456789', 'nombre' => 'Alumno CE', 'seccion_id' => $seccion->id],
+            ['dni' => '1234567890', 'nombre' => 'Documento fuera del patrón', 'seccion_id' => $seccion->id],
+        ]);
+
+        $this->withSession([
+            'usuario_id' => $directora->id,
+            'usuario_rol' => 'Directora',
+        ])->get(route('estudiantes.index'))
+            ->assertOk()
+            ->assertSee('Documento')
+            ->assertSee('12345678 · DNI')
+            ->assertSee('123456789 · CE')
+            ->assertSee('1234567890 · DNI')
+            ->assertSee('Nombre o documento');
+    }
+
+    public function test_professor_student_list_limits_all_sections_to_active_dashboard_context(): void
+    {
+        $curso = Curso::create(['nombre' => 'Comunicación']);
+        $seccionActiva = Seccion::create(['grado' => '1.º', 'seccion' => 'A']);
+        $otraSeccion = Seccion::create(['grado' => '1.º', 'seccion' => 'B']);
+        $profesor = User::create([
+            'name' => 'Profesor Contexto Alumnos',
+            'email' => 'profesor.contexto.alumnos@example.test',
+            'dni' => '88776655',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        AsignacionDocente::create([
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'seccion_id' => $seccionActiva->id,
+        ]);
+        AsignacionDocente::create([
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'seccion_id' => $otraSeccion->id,
+        ]);
+        \DB::table('estudiantes')->insert([
+            ['dni' => '88770001', 'nombre' => 'Alumno en contexto activo', 'seccion_id' => $seccionActiva->id],
+            ['dni' => '88770002', 'nombre' => 'Alumno en otra sección asignada', 'seccion_id' => $otraSeccion->id],
+        ]);
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('estudiantes.index'))
+            ->assertOk()
+            ->assertDontSee('Alumno en contexto activo')
+            ->assertDontSee('Alumno en otra sección asignada');
+
+        $this->get(route('dashboard', [
+            'grado' => $seccionActiva->grado,
+            'seccion_id' => $seccionActiva->id,
+            'curso_id' => $curso->id,
+        ]))->assertOk();
+
+        $this->get(route('estudiantes.index'))
+            ->assertOk()
+            ->assertSee('Alumno en contexto activo')
+            ->assertDontSee('Alumno en otra sección asignada');
+
+        $this->get(route('estudiantes.index', ['seccion_id' => $otraSeccion->id]))
+            ->assertOk()
+            ->assertDontSee('Alumno en contexto activo')
+            ->assertDontSee('Alumno en otra sección asignada');
     }
 
     public function test_professor_can_register_and_update_foreign_student_document(): void
@@ -819,6 +921,118 @@ class TeacherAssignmentTest extends TestCase
             ->assertSee('>0</div>', false);
     }
 
+    public function test_professor_dashboard_keeps_context_until_explicitly_cleared(): void
+    {
+        $curso = Curso::create(['nombre' => 'Comunicación']);
+        $seccion = Seccion::create(['grado' => '3.º', 'seccion' => 'A']);
+        $profesor = User::create([
+            'name' => 'Profesor Contexto',
+            'email' => 'profesor.contexto@example.test',
+            'dni' => '44556677',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $urlAplicar = route('dashboard').'?grado='.urlencode($seccion->grado)
+            .'&seccion_id='.$seccion->id.'&curso_id='.$curso->id;
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get($urlAplicar)
+            ->assertOk()
+            ->assertSee('"seleccionado":true', false);
+
+        $this->get(route('incidencias.index'))->assertOk();
+        $this->get(route('estudiantes.index'))->assertOk();
+
+        $this->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('"seleccionado":true', false)
+            ->assertSee('value="'.$seccion->id.'" data-grado="'.$seccion->grado.'" selected', false)
+            ->assertSee('value="'.$curso->id.'" selected', false);
+
+        $this->get(route('dashboard', ['limpiar_contexto' => 1]))
+            ->assertRedirect(route('dashboard'));
+
+        $this->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('Las tarjetas estarán en cero', false);
+    }
+
+    public function test_professor_incidence_list_requires_and_applies_dashboard_context(): void
+    {
+        $curso = Curso::create(['nombre' => 'Comunicación']);
+        $otroCurso = Curso::create(['nombre' => 'Matemática']);
+        $seccion = Seccion::create(['grado' => '3.º', 'seccion' => 'A']);
+        $otraSeccion = Seccion::create(['grado' => '4.º', 'seccion' => 'B']);
+        $profesor = User::create([
+            'name' => 'Profesor Filtro',
+            'email' => 'profesor.filtro@example.test',
+            'dni' => '44556678',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $estudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '44550001',
+            'nombre' => 'Alumno Contexto Activo',
+            'seccion_id' => $seccion->id,
+        ]);
+        $otroEstudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '44550002',
+            'nombre' => 'Alumno Fuera de Contexto',
+            'seccion_id' => $otraSeccion->id,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Leve']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+
+        foreach ([
+            [$estudianteId, $curso->id],
+            [$otroEstudianteId, $otroCurso->id],
+        ] as [$idEstudiante, $idCurso]) {
+            \DB::table('incidencias')->insert([
+                'estudiante_id' => $idEstudiante,
+                'usuario_id' => $profesor->id,
+                'curso_id' => $idCurso,
+                'fecha' => now()->toDateString(),
+                'hora' => '09:00:00',
+                'descripcion' => 'Incidencia de prueba',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+            ]);
+        }
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('incidencias.index'))
+            ->assertOk()
+            ->assertDontSee('Alumno Contexto Activo')
+            ->assertDontSee('Alumno Fuera de Contexto');
+
+        $this->get(route('dashboard', [
+            'grado' => $seccion->grado,
+            'seccion_id' => $seccion->id,
+            'curso_id' => $curso->id,
+        ]))->assertOk();
+
+        $this->get(route('incidencias.index'))
+            ->assertOk()
+            ->assertSee('Alumno Contexto Activo')
+            ->assertDontSee('Alumno Fuera de Contexto');
+
+        $this->get(route('dashboard', ['limpiar_contexto' => 1]))
+            ->assertRedirect(route('dashboard'));
+
+        $this->get(route('incidencias.index'))
+            ->assertOk()
+            ->assertDontSee('Alumno Contexto Activo')
+            ->assertDontSee('Alumno Fuera de Contexto');
+    }
+
     public function test_professor_professional_report_supports_multiple_sections_and_counts_reserved_without_showing_content(): void
     {
         $curso = Curso::create(['nombre' => 'Comunicación']);
@@ -1046,6 +1260,82 @@ class TeacherAssignmentTest extends TestCase
             ->assertSee('"total":0', false);
     }
 
+    public function test_chatbot_limits_professor_statistics_to_active_context_including_reserved_counts(): void
+    {
+        $curso = Curso::create(['nombre' => 'Matemática']);
+        $otroCurso = Curso::create(['nombre' => 'Comunicación']);
+        $seccion = Seccion::create(['grado' => '2.º', 'seccion' => 'B']);
+        $otraSeccion = Seccion::create(['grado' => '2.º', 'seccion' => 'C']);
+        $profesor = User::create([
+            'name' => 'Profesor Contexto Bot',
+            'email' => 'profesor.contexto.bot@example.test',
+            'dni' => '66667778',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        AsignacionDocente::create([
+            'usuario_id' => $profesor->id,
+            'curso_id' => $curso->id,
+            'seccion_id' => $seccion->id,
+        ]);
+        $estudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '66660001',
+            'nombre' => 'Alumno Reservado Contexto',
+            'seccion_id' => $seccion->id,
+        ]);
+        $otroEstudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '66660002',
+            'nombre' => 'Alumno Fuera Contexto',
+            'seccion_id' => $otraSeccion->id,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Grave']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+
+        foreach ([
+            [$estudianteId, $curso->id, $profesor->id, false, 'Incidencia propia'],
+            [$estudianteId, $curso->id, 1, true, 'CONTENIDO RESERVADO FUERA DEL CONTEXTO'],
+            [$estudianteId, $otroCurso->id, $profesor->id, false, 'Incidencia de otro curso'],
+            [$otroEstudianteId, $curso->id, $profesor->id, false, 'Incidencia de otra sección'],
+        ] as [$idEstudiante, $idCurso, $usuarioId, $esReservada, $descripcion]) {
+            \DB::table('incidencias')->insert([
+                'estudiante_id' => $idEstudiante,
+                'usuario_id' => $usuarioId,
+                'curso_id' => $idCurso,
+                'fecha' => now()->toDateString(),
+                'hora' => '09:00:00',
+                'descripcion' => $descripcion,
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => $esReservada,
+            ]);
+        }
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('dashboard', [
+            'grado' => $seccion->grado,
+            'seccion_id' => $seccion->id,
+            'curso_id' => $curso->id,
+        ]))->assertOk();
+
+        $contextoProfesor = app(ChatbotContextoService::class)
+            ->construirPrompt($profesor, 'resumen total de incidencias');
+        $this->assertStringContainsString('- Total de incidencias: 2', $contextoProfesor);
+        $this->assertStringContainsString('Matemática: 2', $contextoProfesor);
+        $this->assertStringNotContainsString('Comunicación', $contextoProfesor);
+        $this->assertStringNotContainsString('Alumno Reservado Contexto', $contextoProfesor);
+        $this->assertStringNotContainsString('Alumno Fuera Contexto', $contextoProfesor);
+        $this->assertStringNotContainsString('CONTENIDO RESERVADO FUERA DEL CONTEXTO', $contextoProfesor);
+
+        $administrador = User::where('email', 'admin@example.test')->firstOrFail();
+        $contextoAdministrador = app(ChatbotContextoService::class)
+            ->construirPrompt($administrador, 'resumen total de incidencias');
+        $this->assertStringContainsString('- Total de incidencias: 4', $contextoAdministrador);
+    }
+
     public function test_professor_dashboard_and_list_count_reserved_incidents_without_exposing_content(): void
     {
         $curso = Curso::create(['nombre' => 'Comunicación']);
@@ -1098,6 +1388,316 @@ class TeacherAssignmentTest extends TestCase
             ->assertDontSee('CONTENIDO RESERVADO NO VISIBLE');
         $this->get(route('incidencias.show', $incidenciaId))
             ->assertForbidden();
+    }
+
+    public function test_chatbot_counts_reserved_student_incidents_without_sending_the_name_or_content(): void
+    {
+        $curso = Curso::create(['nombre' => 'Comunicación']);
+        $seccion = Seccion::create(['grado' => '4.º', 'seccion' => 'B']);
+        $profesor = User::create([
+            'name' => 'Profesor Chatbot',
+            'email' => 'profesor.chatbot.reservadas@example.test',
+            'dni' => '66778898',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $estudianteId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '77889901',
+            'nombre' => 'Elmer Quispe',
+            'seccion_id' => $seccion->id,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Grave']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+        \DB::table('incidencias')->insert([
+            [
+                'estudiante_id' => $estudianteId,
+                'usuario_id' => $profesor->id,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '09:30:00',
+                'descripcion' => 'DETALLE CONFIDENCIAL DEL ALUMNO',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => true,
+            ],
+            [
+                'estudiante_id' => $estudianteId,
+                'usuario_id' => $profesor->id,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '10:30:00',
+                'descripcion' => 'Incidencia pública',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => false,
+            ],
+        ]);
+
+        $contexto = app(ChatbotContextoService::class)->construirPrompt(
+            $profesor,
+            '¿Cuántas incidencias tiene el alumno Elmer Quispe?'
+        );
+
+        $this->assertStringContainsString(
+            'Total de incidencias del alumno consultado (incluye reservadas): 2',
+            $contexto
+        );
+        $this->assertStringNotContainsString('Elmer Quispe', $contexto);
+        $this->assertStringNotContainsString('DETALLE CONFIDENCIAL DEL ALUMNO', $contexto);
+    }
+
+    public function test_chatbot_institutional_roles_can_report_student_totals_without_reserved_content(): void
+    {
+        $curso = Curso::create(['nombre' => 'Comunicación']);
+        $seccion = Seccion::create(['grado' => '4.º', 'seccion' => 'A']);
+        $directora = User::create([
+            'name' => 'Directora Chatbot Alumno',
+            'email' => 'directora.chatbot.alumno@example.test',
+            'dni' => '66778897',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Directora')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        $elmerId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '77889902',
+            'nombre' => 'Elmer Quispe',
+            'seccion_id' => $seccion->id,
+        ]);
+        $alumnoReservadoId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '77889903',
+            'nombre' => 'Alumno Reservado Confidencial',
+            'seccion_id' => $seccion->id,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Leve']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+
+        for ($indice = 0; $indice < 4; $indice++) {
+            \DB::table('incidencias')->insert([
+                'estudiante_id' => $elmerId,
+                'usuario_id' => $directora->id,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '09:30:00',
+                'descripcion' => 'Incidencia pública '.$indice,
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => false,
+            ]);
+        }
+        \DB::table('incidencias')->insert([
+            'estudiante_id' => $elmerId,
+            'usuario_id' => $directora->id,
+            'curso_id' => $curso->id,
+            'fecha' => now()->toDateString(),
+            'hora' => '10:00:00',
+            'descripcion' => 'CONTENIDO RESERVADO DE ELMER',
+            'gravedad_id' => $gravedadId,
+            'estado_id' => $estadoId,
+            'es_reservada' => true,
+        ]);
+        \DB::table('incidencias')->insert([
+            [
+                'estudiante_id' => $alumnoReservadoId,
+                'usuario_id' => $directora->id,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '10:30:00',
+                'descripcion' => 'Incidencia pública vinculada a alumno reservado',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => false,
+                'deleted_at' => null,
+            ],
+            [
+                'estudiante_id' => $alumnoReservadoId,
+                'usuario_id' => $directora->id,
+                'curso_id' => $curso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '11:30:00',
+                'descripcion' => 'CONTENIDO RESERVADO DE OTRO ALUMNO',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => true,
+                'deleted_at' => now(),
+            ],
+        ]);
+
+        $administrador = User::where('email', 'admin@example.test')->firstOrFail();
+        $subdirector = User::create([
+            'name' => 'Subdirector Chatbot Alumno',
+            'email' => 'subdirector.chatbot.alumno@example.test',
+            'dni' => '66778895',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Subdirector')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+
+        foreach ([$directora, $subdirector, $administrador] as $usuario) {
+            $contexto = app(ChatbotContextoService::class)->construirPrompt(
+                $usuario,
+                '¿Cuántas incidencias tiene Elmer Quispe?'
+            );
+
+            $this->assertStringContainsString(
+                'Directora, Subdirector y Administrador pueden consultar conteos por alumno',
+                $contexto
+            );
+            $this->assertStringContainsString('Total de incidencias de Elmer Quispe: 5', $contexto);
+            $this->assertStringNotContainsString('CONTENIDO RESERVADO DE ELMER', $contexto);
+            $this->assertStringNotContainsString('Alumno Reservado Confidencial', $contexto);
+            $this->assertStringNotContainsString('CONTENIDO RESERVADO DE OTRO ALUMNO', $contexto);
+        }
+    }
+
+    public function test_chatbot_professor_student_total_uses_active_section_and_course_and_hides_reserved_name(): void
+    {
+        $cursoActivo = Curso::create(['nombre' => 'Matemática']);
+        $otroCurso = Curso::create(['nombre' => 'Comunicación']);
+        $seccionActiva = Seccion::create(['grado' => '2.º', 'seccion' => 'A']);
+        $otraSeccion = Seccion::create(['grado' => '2.º', 'seccion' => 'B']);
+        $profesor = User::create([
+            'name' => 'Profesor Chatbot Contexto Alumno',
+            'email' => 'profesor.chatbot.contexto.alumno@example.test',
+            'dni' => '66778896',
+            'password' => 'password-seguro',
+            'rol_id' => Rol::where('nombre_rol', 'Profesor')->value('id'),
+            'estado_aprobacion' => 'Aprobado',
+            'activo' => true,
+        ]);
+        AsignacionDocente::create([
+            'usuario_id' => $profesor->id,
+            'curso_id' => $cursoActivo->id,
+            'seccion_id' => $seccionActiva->id,
+        ]);
+        $elmerId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '77889904',
+            'nombre' => 'Elmer Quispe',
+            'seccion_id' => $seccionActiva->id,
+        ]);
+        $alumnoFueraContextoId = \DB::table('estudiantes')->insertGetId([
+            'dni' => '77889905',
+            'nombre' => 'Elmer Quispe Fuera',
+            'seccion_id' => $otraSeccion->id,
+        ]);
+        $gravedadId = \DB::table('gravedades')->insertGetId(['nombre' => 'Grave']);
+        $estadoId = \DB::table('estados')->insertGetId(['nombre' => 'Pendiente']);
+        \DB::table('incidencias')->insert([
+            [
+                'estudiante_id' => $elmerId,
+                'usuario_id' => $profesor->id,
+                'curso_id' => $cursoActivo->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '09:30:00',
+                'descripcion' => 'Incidencia visible en contexto',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => false,
+            ],
+            [
+                'estudiante_id' => $elmerId,
+                'usuario_id' => $profesor->id,
+                'curso_id' => $cursoActivo->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '10:30:00',
+                'descripcion' => 'CONTENIDO RESERVADO EN CONTEXTO',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => true,
+            ],
+            [
+                'estudiante_id' => $elmerId,
+                'usuario_id' => $profesor->id,
+                'curso_id' => $otroCurso->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '11:30:00',
+                'descripcion' => 'INCIDENCIA FUERA DEL CURSO ACTIVO',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => false,
+            ],
+            [
+                'estudiante_id' => $alumnoFueraContextoId,
+                'usuario_id' => $profesor->id,
+                'curso_id' => $cursoActivo->id,
+                'fecha' => now()->toDateString(),
+                'hora' => '12:30:00',
+                'descripcion' => 'INCIDENCIA FUERA DE LA SECCION ACTIVA',
+                'gravedad_id' => $gravedadId,
+                'estado_id' => $estadoId,
+                'es_reservada' => false,
+            ],
+        ]);
+
+        $this->withSession([
+            'usuario_id' => $profesor->id,
+            'usuario_rol' => 'Profesor',
+        ])->get(route('dashboard', [
+            'grado' => $seccionActiva->grado,
+            'seccion_id' => $seccionActiva->id,
+            'curso_id' => $cursoActivo->id,
+        ]))->assertOk();
+
+        $contexto = app(ChatbotContextoService::class)->construirPrompt(
+            $profesor,
+            '¿Cuántas incidencias tiene Elmer Quispe?'
+        );
+
+        $this->assertStringContainsString(
+            'Total de incidencias del alumno consultado (incluye reservadas): 2',
+            $contexto
+        );
+        $this->assertStringNotContainsString('Elmer Quispe', $contexto);
+        $this->assertStringNotContainsString('CONTENIDO RESERVADO EN CONTEXTO', $contexto);
+        $this->assertStringNotContainsString('INCIDENCIA FUERA DEL CURSO ACTIVO', $contexto);
+        $this->assertStringNotContainsString('INCIDENCIA FUERA DE LA SECCION ACTIVA', $contexto);
+    }
+
+    public function test_chatbot_pdf_navigation_guide_matches_authenticated_role_permissions(): void
+    {
+        $usuarios = [
+            'Administrador' => User::where('email', 'admin@example.test')->firstOrFail(),
+        ];
+
+        foreach (['Profesor', 'Directora', 'Subdirector'] as $indice => $rol) {
+            $usuarios[$rol] = User::create([
+                'name' => "Usuario {$rol}",
+                'email' => strtolower($rol).'.guia.pdf@example.test',
+                'dni' => '9000000'.($indice + 1),
+                'password' => 'password-seguro',
+                'rol_id' => Rol::where('nombre_rol', $rol)->value('id'),
+                'estado_aprobacion' => 'Aprobado',
+                'activo' => true,
+            ]);
+        }
+
+        $contextos = [];
+        foreach ($usuarios as $rol => $usuario) {
+            $contextos[$rol] = app(ChatbotContextoService::class)
+                ->construirPrompt($usuario, '¿Cómo genero un PDF?');
+        }
+
+        $this->assertStringContainsString('Alumnos > Reportes', $contextos['Profesor']);
+        $this->assertStringContainsString('Todas (PDF directo)', $contextos['Profesor']);
+        $this->assertStringContainsString('Reporte Profesional docente', $contextos['Profesor']);
+        $this->assertStringContainsString('No tienes acceso a “Descargar acta PDF”', $contextos['Profesor']);
+
+        foreach (['Directora', 'Subdirector'] as $rol) {
+            $this->assertStringContainsString('Alumnos > Reportes', $contextos[$rol]);
+            $this->assertStringContainsString('Reporte Profesional Institucional', $contextos[$rol]);
+            $this->assertStringContainsString('Descargar acta PDF', $contextos[$rol]);
+            $this->assertStringContainsString('incidencias no reservadas', $contextos[$rol]);
+        }
+
+        $this->assertStringContainsString('Reporte Profesional Institucional', $contextos['Administrador']);
+        $this->assertStringNotContainsString('Alumnos > Reportes', $contextos['Administrador']);
+        $this->assertStringContainsString(
+            'no tiene acceso al reporte PDF individual de Alumnos ni a “Descargar acta PDF”',
+            $contextos['Administrador']
+        );
     }
 
     public function test_incidence_search_filters_by_student_name(): void
@@ -1447,7 +2047,12 @@ class TeacherAssignmentTest extends TestCase
         $this->withSession([
             'usuario_id' => $profesor->id,
             'usuario_rol' => 'Profesor',
-        ])->get(route('incidencias.index'))
+        ])->get(route('dashboard', [
+            'grado' => $seccion->grado,
+            'seccion_id' => $seccion->id,
+            'curso_id' => $curso->id,
+        ]))->assertOk();
+        $this->get(route('incidencias.index'))
             ->assertOk()
             ->assertSee('Reservado')
             ->assertDontSee('Registro reservado');
@@ -1740,6 +2345,12 @@ class TeacherAssignmentTest extends TestCase
             'usuario_id' => $profesor->id,
             'usuario_rol' => 'Profesor',
         ]);
+
+        $this->get(route('dashboard', [
+            'grado' => $seccionAsignada->grado,
+            'seccion_id' => $seccionAsignada->id,
+            'curso_id' => $curso->id,
+        ]))->assertOk();
 
         $this->get(route('estudiantes.index', ['buscar' => '1111']))
             ->assertOk()

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Estudiante;
+use App\Models\Curso;
 use App\Models\Seccion;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -19,6 +20,9 @@ class EstudianteController extends Controller
         $usuario = User::with('rol')->findOrFail($request->session()->get('usuario_id'));
         $rol = $usuario->rol?->nombre_rol;
         abort_unless(in_array($rol, ['Profesor', 'Directora', 'Subdirector'], true), 403);
+        $contextoProfesor = $rol === 'Profesor'
+            ? $this->contextoDashboardProfesor($usuario)
+            : null;
 
         $secciones = $rol === 'Profesor'
             ? $usuario->seccionesDocentes()->orderBy('grado')->orderBy('seccion')->get()
@@ -30,6 +34,11 @@ class EstudianteController extends Controller
 
         if ($rol === 'Profesor') {
             $query->whereIn('seccion_id', $secciones->modelKeys());
+            if ($contextoProfesor === null) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where('seccion_id', $contextoProfesor['seccion_id']);
+            }
         }
 
         $buscar = trim((string) $request->input('buscar', ''));
@@ -55,8 +64,43 @@ class EstudianteController extends Controller
         }
 
         $estudiantes = $query->orderBy('nombre')->paginate(25)->withQueryString();
+        $contextoProfesorActivo = $contextoProfesor !== null;
 
-        return view('estudiantes.index', compact('secciones', 'estudiantes', 'buscar', 'seccionId', 'rol'));
+        return view('estudiantes.index', compact(
+            'secciones',
+            'estudiantes',
+            'buscar',
+            'seccionId',
+            'rol',
+            'contextoProfesorActivo'
+        ));
+    }
+
+    private function contextoDashboardProfesor(User $usuario): ?array
+    {
+        $contexto = session()->get('contexto_dashboard_profesor_'.$usuario->getKey());
+        if (
+            !is_array($contexto)
+            || trim((string) ($contexto['grado'] ?? '')) === ''
+            || !is_numeric($contexto['seccion_id'] ?? null)
+            || !is_numeric($contexto['curso_id'] ?? null)
+        ) {
+            return null;
+        }
+
+        $seccion = Seccion::query()->find((int) $contexto['seccion_id']);
+        if (
+            !$seccion
+            || $seccion->grado !== trim((string) $contexto['grado'])
+            || !Curso::query()->whereKey((int) $contexto['curso_id'])->exists()
+        ) {
+            return null;
+        }
+
+        return [
+            'seccion_id' => (int) $contexto['seccion_id'],
+            'curso_id' => (int) $contexto['curso_id'],
+        ];
     }
 
     public function reporteSeleccionar(Request $request, Estudiante $estudiante)

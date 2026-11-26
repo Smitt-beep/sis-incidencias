@@ -31,6 +31,7 @@
         max-width: 1120px;
         margin: 0 auto;
         background: #fff;
+        color: var(--report-ink);
     }
     .professional-report-header {
         display: grid;
@@ -121,8 +122,21 @@
             max-width: none !important;
             margin: 0 !important;
             box-shadow: none !important;
+            color: #172033 !important;
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
+        }
+        .professional-report-document .professional-kpi:not(.total),
+        .professional-report-document .professional-kpi:not(.total) *,
+        .professional-report-document .professional-report-table tbody td,
+        .professional-report-document .professional-state-label,
+        .professional-report-document .professional-state-label * {
+            color: #172033 !important;
+        }
+        .professional-report-document .professional-kpi.total,
+        .professional-report-document .professional-kpi.total *,
+        .professional-report-document .professional-report-table th {
+            color: #fff !important;
         }
         .professional-report-document section,
         .professional-report-document .professional-report-grid,

@@ -109,7 +109,22 @@ class AuthController extends Controller
         $cursos = collect();
 
         if ($usuario->rol?->nombre_rol === 'Profesor') {
-            $seleccionProfesor = $this->contextoDashboardProfesor($request);
+            $claveContexto = 'contexto_dashboard_profesor_'.$usuario->getKey();
+            if ($request->boolean('limpiar_contexto')) {
+                $request->session()->forget($claveContexto);
+
+                return redirect()->route('dashboard');
+            }
+
+            $seleccionProfesor = $this->contextoDashboardProfesor($request->query());
+            if ($seleccionProfesor !== null) {
+                $request->session()->put($claveContexto, $seleccionProfesor);
+            } else {
+                $seleccionProfesor = $this->contextoDashboardProfesor(
+                    $request->session()->get($claveContexto, [])
+                );
+            }
+
             $grados = Seccion::query()->whereNotNull('grado')->distinct()->orderBy('grado')->pluck('grado');
             $secciones = Seccion::query()->orderBy('grado')->orderBy('seccion')->get(['id', 'grado', 'seccion']);
             $cursos = Curso::query()->orderBy('nombre')->get(['id', 'nombre']);
@@ -133,11 +148,11 @@ class AuthController extends Controller
         ));
     }
 
-    private function contextoDashboardProfesor(Request $request): ?array
+    private function contextoDashboardProfesor(array $seleccion): ?array
     {
-        $grado = trim((string) $request->query('grado', ''));
-        $seccionId = $request->query('seccion_id');
-        $cursoId = $request->query('curso_id');
+        $grado = trim((string) ($seleccion['grado'] ?? ''));
+        $seccionId = $seleccion['seccion_id'] ?? null;
+        $cursoId = $seleccion['curso_id'] ?? null;
 
         if ($grado === '' || !is_numeric($seccionId) || !is_numeric($cursoId)) {
             return null;

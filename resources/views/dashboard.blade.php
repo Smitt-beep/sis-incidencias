@@ -28,7 +28,7 @@
                             <select name="grado" id="dashboard-grado" class="form-select" required>
                                 <option value="">Seleccione un grado</option>
                                 @foreach ($grados as $grado)
-                                    <option value="{{ $grado }}" @selected(request('grado') === $grado)>{{ $grado }}</option>
+                                    <option value="{{ $grado }}" @selected(($seleccionProfesor['grado'] ?? null) === $grado)>{{ $grado }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -37,7 +37,7 @@
                             <select name="seccion_id" id="dashboard-seccion" class="form-select" required>
                                 <option value="">Seleccione una sección</option>
                                 @foreach ($secciones as $seccion)
-                                    <option value="{{ $seccion->id }}" data-grado="{{ $seccion->grado }}" @selected((string) request('seccion_id') === (string) $seccion->id)>
+                                    <option value="{{ $seccion->id }}" data-grado="{{ $seccion->grado }}" @selected((string) ($seleccionProfesor['seccion_id'] ?? '') === (string) $seccion->id)>
                                         {{ $seccion->grado }} - {{ $seccion->seccion }}
                                     </option>
                                 @endforeach
@@ -48,7 +48,7 @@
                             <select name="curso_id" id="dashboard-curso" class="form-select" required>
                                 <option value="">Seleccione un curso</option>
                                 @foreach ($cursos as $curso)
-                                    <option value="{{ $curso->id }}" @selected((string) request('curso_id') === (string) $curso->id)>
+                                    <option value="{{ $curso->id }}" @selected((string) ($seleccionProfesor['curso_id'] ?? '') === (string) $curso->id)>
                                         {{ $curso->nombre }}
                                     </option>
                                 @endforeach
@@ -56,7 +56,7 @@
                         </div>
                         <div class="col-12 d-flex gap-2">
                             <button type="submit" class="btn btn-primary">Aplicar</button>
-                            <a href="{{ route('dashboard') }}" class="btn btn-outline-secondary">Limpiar selección</a>
+                            <a href="{{ route('dashboard', ['limpiar_contexto' => 1]) }}" class="btn btn-outline-secondary">Limpiar selección</a>
                         </div>
                     </form>
                 </div>

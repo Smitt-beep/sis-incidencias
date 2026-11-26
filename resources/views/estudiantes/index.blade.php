@@ -90,7 +90,7 @@
                 id="buscar-estudiante"
                 value="{{ $buscar }}"
                 class="form-control"
-                placeholder="Nombre o DNI"
+                placeholder="Nombre o documento"
             >
         </div>
         <div class="col-sm-6 col-md-4">
@@ -117,7 +117,7 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th scope="col">DNI</th>
+                        <th scope="col">Documento</th>
                         <th scope="col">Nombre completo</th>
                         <th scope="col">Grado</th>
                         <th scope="col">Sección</th>
@@ -127,7 +127,7 @@
                 <tbody>
                     @forelse ($estudiantes as $estudiante)
                         <tr>
-                            <td>{{ $estudiante->dni }}</td>
+                            <td>{{ $estudiante->dni }} · {{ preg_match('/\A[0-9]{9}\z/', (string) $estudiante->dni) === 1 ? 'CE' : 'DNI' }}</td>
                             <td>{{ $estudiante->nombre }}</td>
                             <td>{{ $estudiante->seccion?->grado }}</td>
                             <td>{{ $estudiante->seccion?->seccion }}</td>
@@ -164,7 +164,11 @@
                     @empty
                         <tr>
                             <td colspan="5" class="text-center text-secondary py-4">
-                                {{ $rol === 'Profesor' ? 'No hay alumnos registrados en tus secciones.' : 'No hay alumnos que coincidan con la búsqueda.' }}
+                                @if ($rol === 'Profesor' && ! $contextoProfesorActivo)
+                                    Selecciona Grado, Sección y Curso en Inicio para ver alumnos.
+                                @else
+                                    {{ $rol === 'Profesor' ? 'No hay alumnos registrados en tu contexto.' : 'No hay alumnos que coincidan con la búsqueda.' }}
+                                @endif
                             </td>
                         </tr>
                     @endforelse

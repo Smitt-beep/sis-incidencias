@@ -295,16 +295,29 @@ class IncidenciaController extends Controller
 
         $query = $this->incidenciasQuery();
         if ($user->rol?->nombre_rol === 'Profesor') {
-            // Sus propias incidencias + las actas reservadas de alumnos de sus secciones
-            // (estas últimas se muestran solo con la etiqueta "Reservado").
-            $seccionesAsignadas = $user->asignacionesDocentes()->pluck('seccion_id');
-            $query->where(function (Builder $q) use ($user, $seccionesAsignadas) {
-                $q->where('usuario_id', $user->getKey())
-                    ->orWhere(function (Builder $reservadas) use ($seccionesAsignadas) {
+            $contexto = $request->session()->get('contexto_dashboard_profesor_'.$user->getKey());
+
+            if (! $this->contextoDashboardProfesorValido($contexto)) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $seccionId = (int) $contexto['seccion_id'];
+                $cursoId = (int) $contexto['curso_id'];
+                $seccionesAsignadas = $user->asignacionesDocentes()->pluck('seccion_id');
+
+                $query->where(function (Builder $q) use ($user, $seccionId, $cursoId, $seccionesAsignadas) {
+                    $q->where(function (Builder $propias) use ($user, $seccionId, $cursoId) {
+                        $propias->where('usuario_id', $user->getKey())
+                            ->where('curso_id', $cursoId)
+                            ->whereHas('estudiante', fn (Builder $e) => $e->where('seccion_id', $seccionId));
+                    })->orWhere(function (Builder $reservadas) use ($seccionId, $cursoId, $seccionesAsignadas) {
                         $reservadas->where('es_reservada', true)
-                            ->whereHas('estudiante', fn (Builder $e) => $e->whereIn('seccion_id', $seccionesAsignadas));
+                            ->where('curso_id', $cursoId)
+                            ->whereHas('estudiante', fn (Builder $e) => $e
+                                ->where('seccion_id', $seccionId)
+                                ->whereIn('seccion_id', $seccionesAsignadas));
                     });
-            });
+                });
+            }
         }
 
         $buscar = trim((string) $request->input('buscar', ''));
@@ -318,6 +331,24 @@ class IncidenciaController extends Controller
         $esUrgencias = false;
 
         return view('incidencias.index', compact('incidencias', 'esUrgencias', 'buscar'));
+    }
+
+    private function contextoDashboardProfesorValido($contexto): bool
+    {
+        if (!is_array($contexto)) {
+            return false;
+        }
+
+        $grado = trim((string) ($contexto['grado'] ?? ''));
+        $seccionId = $contexto['seccion_id'] ?? null;
+        $cursoId = $contexto['curso_id'] ?? null;
+
+        if ($grado === '' || !is_numeric($seccionId) || !is_numeric($cursoId)) {
+            return false;
+        }
+
+        return Seccion::query()->whereKey((int) $seccionId)->where('grado', $grado)->exists()
+            && Curso::query()->whereKey((int) $cursoId)->exists();
     }
 
     public function urgencias(Request $request)
